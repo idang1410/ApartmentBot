@@ -94,7 +94,7 @@ const responseSchema = {
           street: { type: 'string', nullable: true },
           floor: { type: 'string', nullable: true, description: 'e.g. "קומה 2" or "קומת קרקע"' },
           propertyType: { type: 'string', nullable: true, description: 'דירה, דירת גן, יחידת דיור, פנטהאוז, דופלקס, בית פרטי, סטודיו' },
-          amenities: { type: 'array', items: { type: 'string' }, description: 'Hebrew labels: חניה, מעלית, מרפסת, ממ״ד, מחסן, מיזוג, מרוהטת, משופצת, חיות מחמד, גינה' },
+          amenities: { type: 'array', items: { type: 'string' }, description: 'Hebrew labels: חניה, מעלית, מרפסת, ממ״ד, מחסן, מיזוג, מרוהטת, משופצת, חיות מחמד, גינה, מקלט (shelter or ממ״ק in the building)' },
           isBroker: { type: 'boolean', nullable: true, description: 'true for agency/תיווך, false for private/ללא תיווך' },
           description: { type: 'string', nullable: true, description: 'One short Hebrew sentence. No phone numbers.' },
           postedText: {

@@ -37,8 +37,13 @@ export function matchesSearch(listing: Listing, search: SavedSearch): boolean {
  * are constrained to. The wizard offers exactly these.
  */
 export const AMENITY_VOCABULARY = [
-  'חניה', 'מעלית', 'מרפסת', 'ממ״ד', 'מחסן', 'מיזוג', 'מרוהטת', 'משופצת', 'חיות מחמד', 'גינה',
+  'חניה', 'מעלית', 'מרפסת', 'ממ״ד', 'מחסן', 'מיזוג', 'מרוהטת', 'משופצת', 'חיות מחמד', 'גינה', 'מקלט',
 ] as const;
+
+/** Requirements a better amenity also meets: a ממ״ד in the flat is at least a shelter in the building. */
+const SATISFIED_BY: Record<string, string[]> = {
+  [normalizeLabel('מקלט')]: [normalizeLabel('ממ״ד')],
+};
 
 /** Quote marks vary between sources (ממ"ד, ממ״ד); labels compare without them. */
 function normalizeLabel(text: string): string {
@@ -49,7 +54,10 @@ function normalizeLabel(text: string): string {
 export function missingAmenities(listing: Listing, required: string[] | undefined): string[] {
   if (!required || required.length === 0) return [];
   const have = new Set(listing.amenities.map(normalizeLabel));
-  return required.filter((amenity) => !have.has(normalizeLabel(amenity)));
+  return required.filter((amenity) => {
+    const label = normalizeLabel(amenity);
+    return !have.has(label) && !(SATISFIED_BY[label] ?? []).some((better) => have.has(better));
+  });
 }
 
 /**

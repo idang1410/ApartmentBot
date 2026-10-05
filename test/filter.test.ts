@@ -372,6 +372,12 @@ describe('attribute requirements', () => {
     expect(meetsRequirements(flat, { amenities: ['חניה', 'מעלית'] })).toBe('exact');
   });
 
+  it('accepts a ממ״ד where a shelter is required, but not the reverse', () => {
+    expect(meetsRequirements(listing({ amenities: ['ממ"ד'] }), { amenities: ['מקלט'] })).toBe('exact');
+    expect(meetsRequirements(listing({ amenities: ['מקלט'] }), { amenities: ['מקלט'] })).toBe('exact');
+    expect(meetsRequirements(listing({ amenities: ['מקלט'] }), { amenities: ['ממ״ד'] })).toBe('near');
+  });
+
   it('treats exactly one missing amenity as a near miss, and two as no match', () => {
     // dorin's "flexible filtering": a flat missing one nice-to-have is still worth a look.
     expect(meetsRequirements(flat, { amenities: ['חניה', 'מרפסת'] })).toBe('near');

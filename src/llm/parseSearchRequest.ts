@@ -68,7 +68,7 @@ const responseSchema = {
     amenities: {
       type: 'array',
       items: { type: 'string' },
-      description: 'Only from: חניה, מעלית, מרפסת, ממ״ד, מחסן, מיזוג, מרוהטת, משופצת, חיות מחמד, גינה',
+      description: 'Only from: חניה, מעלית, מרפסת, ממ״ד, מחסן, מיזוג, מרוהטת, משופצת, חיות מחמד, גינה, מקלט (shelter or ממ״ק in the building)',
     },
     privateOnly: { type: 'boolean', nullable: true, description: 'true when they want no brokers (ללא תיווך)' },
     minSqm: { type: 'integer', nullable: true },

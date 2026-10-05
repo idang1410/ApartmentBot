@@ -85,7 +85,7 @@ const responseSchema = {
           amenities: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Hebrew labels only, from: חניה, מעלית, מרפסת, ממ״ד, מחסן, מיזוג, מרוהטת, משופצת, חיות מחמד, גינה',
+            description: 'Hebrew labels only, from: חניה, מעלית, מרפסת, ממ״ד, מחסן, מיזוג, מרוהטת, משופצת, חיות מחמד, גינה, מקלט (shelter or ממ״ק in the building)',
           },
           isBroker: {
             type: 'boolean',
