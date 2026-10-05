@@ -18,6 +18,7 @@ export interface MadlanBulletin {
     streetName?: unknown;
     streetNumber?: unknown;
   } | null;
+  amenities?: { secureRoom?: unknown; miklat?: unknown; mamak?: unknown } | null;
 }
 
 /**
@@ -64,7 +65,10 @@ export function normalizeMadlanBulletins(
       price: number_(bulletin.price),
       rooms: number_(bulletin.beds),
       city: listingCity,
-      amenities: [],
+      amenities: [
+        ...(bulletin.amenities?.secureRoom === true ? ['ממ״ד'] : []),
+        ...(bulletin.amenities?.miklat === true || bulletin.amenities?.mamak === true ? ['מקלט'] : []),
+      ],
       imageUrls: [],
       ...(address ? { address } : {}),
       ...(text(bulletin.addressDetails?.neighbourhood)

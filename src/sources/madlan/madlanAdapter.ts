@@ -34,6 +34,7 @@ const QUERY = `query($q: SearchBulletinQueryInput!) {
     bulletins {
       id price beds area floor dealType lastUpdated sellerType description
       addressDetails { city neighbourhood streetName streetNumber }
+      amenities { secureRoom miklat mamak }
     }
   }
 }`;

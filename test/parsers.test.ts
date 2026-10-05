@@ -113,6 +113,15 @@ describe('madlan api', () => {
     expect(typeof listing?.rooms === 'number' || listing?.rooms === null).toBe(true);
   });
 
+  it('reads the safe room and the building shelter', () => {
+    const [first] = bulletins.filter((b) => normalizeMadlanBulletins([b], petahTikva).length > 0);
+    const read = (amenities: MadlanBulletin['amenities']) =>
+      normalizeMadlanBulletins([{ ...first!, amenities }], petahTikva)[0]?.amenities;
+    expect(read({ secureRoom: true, miklat: false, mamak: false })).toEqual(['ממ״ד']);
+    expect(read({ secureRoom: false, miklat: false, mamak: true })).toEqual(['מקלט']);
+    expect(read(null)).toEqual([]);
+  });
+
   it('maps madlan’s own seller words onto the broker flag, and guesses nothing', () => {
     const city = CITIES.find((c) => c.key === 'modiin')!;
     const row = (sellerType: unknown) => ({
