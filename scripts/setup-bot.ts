@@ -13,6 +13,7 @@ await bot.api.setMyCommands([
   { command: 'add', description: 'הוספת חיפוש חדש' },
   { command: 'list', description: 'החיפושים השמורים שלי' },
   { command: 'latest', description: 'מה יש בשוק כרגע' },
+  { command: 'map', description: 'מפת הדירות שהתאימו' },
   { command: 'status', description: 'מצב המערכת והמקורות' },
   { command: 'now', description: 'הרצת סריקה עכשיו' },
   { command: 'remove', description: 'מחיקת חיפוש' },

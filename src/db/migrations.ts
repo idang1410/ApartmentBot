@@ -122,4 +122,14 @@ export const MIGRATIONS: string[] = [
   `
   ALTER TABLE saved_searches ADD COLUMN requirements TEXT;
   `,
+  // Nominatim answers for the map, kept for good: its usage policy asks
+  // clients to cache. NULL lat/lng records a place it could not find.
+  `
+  CREATE TABLE geocode_cache (
+    key        TEXT PRIMARY KEY,
+    lat        REAL,
+    lng        REAL,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  `,
 ];

@@ -30,6 +30,7 @@ const schema = z.object({
   // all of them. See `selectSources` in sources/index.ts for why this is a
   // setting and not a code edit.
   SOURCES: blankAsUndefined(z.string().optional()),
+  MAP_PORT: blankAsUndefined(z.coerce.number().int().min(1).max(65535).default(8787)),
 });
 
 /**
@@ -76,6 +77,7 @@ export const config = {
   facebookEnabled: env.FACEBOOK_ENABLED === '1',
   /** Boards to read; undefined means every one that is registered. */
   enabledSources: selectSources(env.SOURCES),
+  mapPort: env.MAP_PORT,
   /** Poll cycles are spread by this fraction so requests are not clockwork. */
   jitterFraction: 0.2,
   /** Individual messages per cycle before collapsing the rest into a summary. */

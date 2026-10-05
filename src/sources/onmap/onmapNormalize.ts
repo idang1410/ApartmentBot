@@ -40,6 +40,7 @@ const propertySchema = z.object({
           house_number: z.union([z.string(), z.number()]).nullish(),
         })
         .nullish(),
+      location: z.object({ lat: z.number(), lon: z.number() }).nullish(),
     })
     .nullish(),
   additional_info: z
@@ -112,6 +113,7 @@ export function parseOnmapListings(payload: unknown, cityName: string): Listing[
       city: he?.city_name ?? cityName,
       ...(he?.neighborhood ? { neighborhood: he.neighborhood } : {}),
       ...(street ? { address: `${street}${house ? ` ${house}` : ''}` } : {}),
+      ...(p.address?.location ? { lat: p.address.location.lat, lng: p.address.location.lon } : {}),
       ...(p.property_type ? { propertyType: p.property_type } : {}),
       ...(sqm ? { sqm } : {}),
       ...(typeof onThe === 'number'

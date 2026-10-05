@@ -16,6 +16,9 @@ export const listingSchema = z.object({
   city: z.string(),
   neighborhood: z.string().optional(),
   address: z.string().optional(),
+  /** WGS84 position, when the source publishes one. */
+  lat: z.number().optional(),
+  lng: z.number().optional(),
   propertyType: z.string().optional(),
   sqm: z.number().positive().optional(),
   /** Free text, because sources write "קרקע"/"קומה 2"/"פרטר". */

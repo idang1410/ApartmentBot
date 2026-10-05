@@ -150,9 +150,12 @@ export function withinAreas(listing: Listing, search: SavedSearch): boolean {
  * A listing whose date is unknown is kept, because most boards publish none
  * and dropping them would silence the bot entirely. First-sight seeding is
  * what stops those undated sources from alerting stale inventory.
+ *
+ * Yad2 is exempt: its date comes from the oldest photo, and its feed holds only
+ * ads updated or bumped lately, so an ad in it is still on offer.
  */
 export function isFreshEnough(listing: Listing, now: Date = new Date()): boolean {
-  if (!listing.postedAt) return true;
+  if (!listing.postedAt || listing.source === 'yad2') return true;
   return daysBetween(listing.postedAt, now) <= MAX_LISTING_AGE_DAYS;
 }
 

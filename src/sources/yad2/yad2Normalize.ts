@@ -13,6 +13,7 @@ const markerSchema = z.object({
       neighborhood: z.object({ text: z.string().nullish() }).nullish(),
       street: z.object({ text: z.string().nullish() }).nullish(),
       house: z.object({ number: z.number().nullish(), floor: z.number().nullish() }).nullish(),
+      coords: z.object({ lat: z.number(), lon: z.number() }).nullish(),
     })
     .nullish(),
   additionalDetails: z
@@ -218,6 +219,7 @@ function toListing(m: Yad2Item, fallbackCity: string, isBroker: boolean | undefi
     city: m.address?.city?.text ?? fallbackCity,
     ...(m.address?.neighborhood?.text ? { neighborhood: m.address.neighborhood.text } : {}),
     ...(address ? { address } : {}),
+    ...(m.address?.coords ? { lat: m.address.coords.lat, lng: m.address.coords.lon } : {}),
     ...(propertyType ? { propertyType } : {}),
     ...(m.additionalDetails?.squareMeter ? { sqm: m.additionalDetails.squareMeter } : {}),
     ...(typeof floor === 'number' ? { floor: floor === 0 ? 'קומת קרקע' : `קומה ${floor}` } : {}),

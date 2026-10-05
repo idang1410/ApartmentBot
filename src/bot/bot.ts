@@ -19,6 +19,7 @@ import {
   handleLatest,
   handleLatestCallback,
   handleList,
+  handleMap,
   handleNow,
   handleUsers,
   handlePause,
@@ -80,6 +81,7 @@ export function registerHandlers(bot: Bot, deps: BotDeps): void {
   bot.command('remove', (ctx) => handleRemovePrompt(ctx, commandDeps));
   bot.command('pause', (ctx) => handlePause(ctx, commandDeps, true));
   bot.command('resume', (ctx) => handlePause(ctx, commandDeps, false));
+  bot.command('map', (ctx) => handleMap(ctx, commandDeps));
   bot.command('status', (ctx) => handleStatus(ctx, commandDeps));
   bot.command('now', (ctx) => handleNow(ctx, commandDeps));
   bot.command('quiet', (ctx) => handleQuiet(ctx, commandDeps, ctx.match ?? ''));

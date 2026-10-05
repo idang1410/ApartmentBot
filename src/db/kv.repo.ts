@@ -21,6 +21,14 @@ export class KvRepo {
     this.db.prepare('DELETE FROM kv WHERE key = ?').run(key);
   }
 
+  /** The first key under `prefix` whose value is `value`. */
+  findKey(prefix: string, value: string): string | undefined {
+    const row = this.db
+      .prepare('SELECT key FROM kv WHERE substr(key, 1, ?) = ? AND value = ? LIMIT 1')
+      .get(prefix.length, prefix, value) as { key: string } | undefined;
+    return row?.key;
+  }
+
   getBoolean(key: string): boolean {
     return this.get(key) === '1';
   }
@@ -35,4 +43,6 @@ export const KV_KEYS = {
   globalPaused: 'global_paused',
   lastCycleAt: 'last_cycle_at',
   ownerChatId: 'owner_chat_id',
+  /** Followed by a chat id; the secret in that chat's map link. */
+  mapTokenPrefix: 'map_token:',
 } as const;

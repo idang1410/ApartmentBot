@@ -5,7 +5,7 @@ const BASE = 'https://realta.co.il';
 
 /**
  * Only the fields the bot uses are declared; Realta sends many more
- * (translations, tax estimates, coordinates) and unknown keys are ignored.
+ * (translations, tax estimates) and unknown keys are ignored.
  */
 const propertySchema = z.object({
   id: z.union([z.string(), z.number()]).transform(String),
@@ -17,6 +17,8 @@ const propertySchema = z.object({
   price: z.number().nullish(),
   rooms: z.number().nullish(),
   sqm: z.number().nullish(),
+  lat: z.number().nullish(),
+  lon: z.number().nullish(),
   floor: z.number().nullish(),
   floorsTotal: z.number().nullish(),
   images: z.array(z.string()).nullish(),
@@ -118,6 +120,7 @@ export function parseRealtaListings(payload: unknown, fallbackCity: string): Lis
       city,
       ...(p.districtNameHe ? { neighborhood: p.districtNameHe } : {}),
       ...(street ? { address: street } : {}),
+      ...(typeof p.lat === 'number' && typeof p.lon === 'number' ? { lat: p.lat, lng: p.lon } : {}),
       ...(p.propertyType
         ? { propertyType: PROPERTY_TYPE_LABELS[p.propertyType] ?? p.propertyType }
         : {}),

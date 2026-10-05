@@ -20,6 +20,7 @@ import { KV_KEYS, type KvRepo } from '../db/kv.repo.js';
 import { sqliteNow, type ListingsRepo } from '../db/listings.repo.js';
 import type { SearchesRepo } from '../db/searches.repo.js';
 import type { UsersRepo } from '../db/users.repo.js';
+import { lanAddress, MAP_DAYS, mapTokenFor } from '../web/mapServer.js';
 import { formatDuration, formatQuietHours, parseQuietHours } from '../util/time.js';
 
 export interface CommandDeps {
@@ -43,6 +44,7 @@ export const HELP_TEXT = [
   '/list - כל החיפושים השמורים',
   '/latest - מה יש בשוק כרגע (גם אם כבר נשלח)',
   '/remove - מחיקת חיפוש',
+  '/map - מפה של הדירות שהתאימו ב-14 הימים האחרונים',
   '/pause · /resume - השהיה וחידוש של כל ההתראות',
   '/status - מצב המערכת והמקורות',
   '/now - הרצת סבב סריקה עכשיו',
@@ -349,6 +351,21 @@ function priceDistance(
   if (search.maxPrice !== null && price > search.maxPrice) return price - search.maxPrice;
   if (search.minPrice !== null && price < search.minPrice) return search.minPrice - price;
   return 0;
+}
+
+/** A link to this chat's map, served from this machine on the local network. */
+export async function handleMap(ctx: Context, deps: CommandDeps): Promise<void> {
+  const host = lanAddress();
+  if (!host) {
+    await ctx.reply('לא מצאתי כתובת ברשת המקומית למחשב של הבוט.');
+    return;
+  }
+  const url = `http://${host}:${config.mapPort}/?t=${mapTokenFor(deps.kv, chatOf(ctx))}`;
+  await ctx.reply(
+    `🗺 מפת הדירות שהתאימו לחיפושים שלך ב-${MAP_DAYS} הימים האחרונים:\n\n${url}\n\n` +
+      'הקישור עובד רק מרשת ה-Wi-Fi של המחשב שמריץ את הבוט. הוא אישי - לא לשתף.',
+    { link_preview_options: { is_disabled: true } },
+  );
 }
 
 /** Creates a share link. Only the owner may hand out access. */

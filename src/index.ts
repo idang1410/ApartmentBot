@@ -1,6 +1,7 @@
 import { createBot, registerHandlers } from './bot/bot.js';
 import { config } from './config.js';
 import { HealthTracker } from './core/health.js';
+import { Geocoder } from './core/geocode.js';
 import { Notifier } from './core/notifier.js';
 import { PollCycle } from './core/pollCycle.js';
 import { Scheduler } from './core/scheduler.js';
@@ -11,6 +12,7 @@ import { SearchesRepo } from './db/searches.repo.js';
 import { UsersRepo } from './db/users.repo.js';
 import { logger } from './logger.js';
 import { buildAdapters } from './sources/index.js';
+import { startMapServer } from './web/mapServer.js';
 
 const db = openDatabase(config.dbPath);
 
@@ -37,6 +39,7 @@ function main(): void {
   );
 
   scheduler.start();
+  startMapServer({ listings, kv, geocoder: new Geocoder(db), port: config.mapPort });
 
   // bot.start() settles only once polling stops, so it must not be awaited.
   bot

@@ -9,6 +9,13 @@ export interface PendingListing {
   matchKind: MatchKind;
 }
 
+export interface MatchedListing {
+  listing: Listing;
+  matchKind: MatchKind;
+  /** SQLite UTC timestamp, "YYYY-MM-DD HH:MM:SS". */
+  firstSeen: string;
+}
+
 /** Decides, per listing, whether it fit the search exactly or was a near miss. */
 export type MatchKindOf = (listing: Listing) => MatchKind;
 
@@ -287,6 +294,47 @@ export class ListingsRepo {
             .get(iso, chatId)
     ) as { n: number };
     return row.n;
+  }
+
+  /**
+   * Listings that matched one of this chat's active searches in the last
+   * `days`, newest first, one per fingerprint.
+   */
+  matchedRecently(chatId: number, days: number): MatchedListing[] {
+    const rows = this.db
+      .prepare(
+        `SELECT l.payload, l.match_kind, l.first_seen, l.fingerprint FROM seen_listings l
+           JOIN saved_searches s ON s.id = l.search_id AND s.active = 1
+          WHERE l.chat_id = ? AND l.payload IS NOT NULL
+            AND COALESCE(l.match_kind, 'exact') IN ('exact', 'near')
+            AND l.first_seen >= datetime('now', ?)
+          ORDER BY l.first_seen DESC`,
+      )
+      .all(chatId, `-${days} days`) as Array<{
+      payload: string;
+      match_kind: string | null;
+      first_seen: string;
+      fingerprint: string | null;
+    }>;
+
+    const seen = new Set<string>();
+    const matched: MatchedListing[] = [];
+    for (const row of rows) {
+      if (row.fingerprint) {
+        if (seen.has(row.fingerprint)) continue;
+        seen.add(row.fingerprint);
+      }
+      try {
+        matched.push({
+          listing: reviveListing(row.payload),
+          matchKind: row.match_kind === 'near' ? 'near' : 'exact',
+          firstSeen: row.first_seen,
+        });
+      } catch {
+        // An unreadable payload is left off the map.
+      }
+    }
+    return matched;
   }
 
   total(chatId?: number): number {

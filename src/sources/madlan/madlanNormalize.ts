@@ -18,6 +18,7 @@ export interface MadlanBulletin {
     streetName?: unknown;
     streetNumber?: unknown;
   } | null;
+  locationPoint?: { lat?: unknown; lng?: unknown } | null;
   amenities?: { secureRoom?: unknown; miklat?: unknown; mamak?: unknown } | null;
 }
 
@@ -71,6 +72,10 @@ export function normalizeMadlanBulletins(
       ],
       imageUrls: [],
       ...(address ? { address } : {}),
+      ...(typeof bulletin.locationPoint?.lat === 'number' &&
+      typeof bulletin.locationPoint?.lng === 'number'
+        ? { lat: bulletin.locationPoint.lat, lng: bulletin.locationPoint.lng }
+        : {}),
       ...(text(bulletin.addressDetails?.neighbourhood)
         ? { neighborhood: text(bulletin.addressDetails?.neighbourhood)! }
         : {}),
