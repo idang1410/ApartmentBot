@@ -11,8 +11,9 @@ export const MARKETPLACE_LOCATIONS: Record<string, string> = {
 export function marketplaceUrl(city: CityEntry): string | null {
   const slug = MARKETPLACE_LOCATIONS[city.key];
   // creation_time_descend puts the newest listings first; the default order is ranked.
+  // radius is in km from the city centre; the default 2 km leaves out Jaffa and the south.
   return slug
-    ? `https://www.facebook.com/marketplace/${slug}/propertyrentals?sortBy=creation_time_descend&exact=false`
+    ? `https://www.facebook.com/marketplace/${slug}/propertyrentals?sortBy=creation_time_descend&exact=false&radius=6`
     : null;
 }
 
