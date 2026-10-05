@@ -87,13 +87,13 @@ describe('sequence baseline in the poll cycle', () => {
     expect(kv.get(`seq_baseline:${search.id}:yad2:modiin`)).toBe('100');
   });
 
-  it('records a bumped old ad silently but alerts on one created after the baseline', async () => {
+  it('alerts on a bumped old ad and on one created after the baseline', async () => {
     current = [ad('a', 100), ad('b', 90)];
     await cycle.run();
     current = [ad('a', 100), ad('b', 90), ad('bumped', 95), ad('fresh', 101)];
     await cycle.run();
 
-    expect(pendingIds()).toEqual(['fresh']);
+    expect(pendingIds()).toEqual(['bumped', 'fresh']);
   });
 
   it('never moves the baseline after the first fetch', async () => {
@@ -122,7 +122,7 @@ describe('sequence baseline in the poll cycle', () => {
     current = [ad('a', 100), ad('bumped', 95), ad('fresh', 101)];
     await cycle.run();
 
-    expect(pendingIds()).toEqual(['fresh']);
+    expect(pendingIds()).toEqual(['bumped', 'fresh']);
   });
 
   it('re-establishes an unreadable baseline instead of trusting it', async () => {

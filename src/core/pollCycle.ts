@@ -101,7 +101,7 @@ export function isCadenceDue(
  * First sight used to be enough: a source returned its whole back catalogue once, and that
  * was seeded. Yad2's feed cannot do that (Tel Aviv's catalogue is 173 pages), and owners
  * bump old ads back to the top, where they would look new. A listing at or below the
- * baseline is old news however recently it was bumped; with no baseline yet, every
+ * baseline is back catalogue however recently it was bumped; with no baseline yet, every
  * sequenced listing is. Listings without a sequence are left to the ordinary rules.
  */
 export function splitBySequence(
@@ -248,8 +248,7 @@ export class PollCycle {
       // seeded, and only what appears afterwards is treated as new.
       const known = this.listings.knownSources(search.chatId);
 
-      // Created before this search started watching the city: bumped back into view, or
-      // simply never reached before. Recorded, never alerted.
+      // The back catalogue of the search's first read of a city: recorded, never alerted.
       const oldNews = unseen.filter((l) => backCatalogue.has(listingKey(l)));
       if (oldNews.length > 0) {
         this.listings.seedAsSeen(oldNews, search.id, search.chatId, kindOf);
@@ -372,9 +371,10 @@ export class PollCycle {
   }
 
   /**
-   * The listings from one city fetch that are back catalogue for this search. The first
-   * time the search reads the city, this also sets its baseline for each sequenced source.
-   * A baseline never moves afterwards: an ad created after it that does not match today and
+   * The listings from one city fetch to record silently for this search: the back catalogue
+   * of the first read, which also sets the search's baseline for each sequenced source.
+   * Afterwards nothing is held back, so an old ad bumped back into view alerts once.
+   * A baseline never moves: an ad created after it that does not match today and
    * gets cheaper next week must still alert then.
    */
   private backCatalogueFor(search: SavedSearch, cityKey: string, listings: Listing[]): Listing[] {
@@ -383,10 +383,14 @@ export class PollCycle {
       listings,
       (source) => this.readBaseline(keyOf(source)) ?? this.readBaseline(`${SEQUENCE_HIGH}${source}`),
     );
+    const firstRead = new Set<string>();
     for (const [source, top] of highest) {
-      if (this.readBaseline(keyOf(source)) === undefined) this.kv.set(keyOf(source), String(top));
+      if (this.readBaseline(keyOf(source)) === undefined) {
+        this.kv.set(keyOf(source), String(top));
+        firstRead.add(source);
+      }
     }
-    return backCatalogue;
+    return backCatalogue.filter((l) => firstRead.has(l.source));
   }
 
   /** Raises each source's nationwide newest-sequence mark from this cycle's fetches. */

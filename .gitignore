@@ -8,3 +8,4 @@ debug/
 # Logged-in browser profiles: session cookies for real accounts.
 .fb-profile/
 .madlan-profile/
+*.swp

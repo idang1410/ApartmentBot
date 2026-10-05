@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- macOS service. Install: cp ops/com.apartmentbot.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.apartmentbot.plist -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.apartmentbot</string>
+  <key>WorkingDirectory</key><string>/Users/idan/work/apartment</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/idan/.nvm/versions/node/v22.22.0/bin/node</string>
+    <string>--import</string><string>tsx</string>
+    <string>src/index.ts</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>/Users/idan/work/apartment/data/bot.log</string>
+  <key>StandardErrorPath</key><string>/Users/idan/work/apartment/data/bot.log</string>
+</dict>
+</plist>

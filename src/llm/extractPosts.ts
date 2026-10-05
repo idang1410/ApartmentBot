@@ -115,6 +115,7 @@ export function buildPostsPrompt(city: string, texts: string[]): string {
 - isRentalListing=true רק לדירת מגורים שמוצעת להשכרה.
 - פוסט של מישהו שמחפש דירה ("מחפש/ת דירה", "דרושה דירה") הוא isWantedPost=true ו-isRentalListing=false.
 - מכירה, שותפים, פרסומות, שאלות ושיחה - isRentalListing=false.
+- rooms: "N חדרי שינה" / "N beds" הם חדרי שינה, כלומר N+1 חדרים.
 - מחיר: מספר בלבד, בשקלים לחודש. "5,500₪" -> 5500. "5.5k" -> 5500. אם אין מחיר - null.
 - אל תמציא פרטים שלא כתובים. מה שלא מופיע - null.
 - entryDateText: תאריך הכניסה בדיוק כפי שכתוב. אם לא כתוב - null.

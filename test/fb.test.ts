@@ -5,6 +5,13 @@ import { SessionExpiredError } from '../src/core/types.js';
 import type { SavedSearch } from '../src/core/types.js';
 import { createFacebookAdapter } from '../src/sources/facebook/fbAdapter.js';
 import { groupsForCity } from '../src/sources/facebook/fbGroups.js';
+import {
+  isPlausibleRent,
+  itemDetailsText,
+  marketplaceUrl,
+  parseMarketplaceCard,
+} from '../src/sources/facebook/fbMarketplace.js';
+import { createMarketplaceAdapter } from '../src/sources/facebook/marketplaceAdapter.js';
 import { buildAdapters } from '../src/sources/index.js';
 
 const search = {} as SavedSearch;
@@ -25,6 +32,61 @@ describe('facebook configuration', () => {
     const adapter = createFacebookAdapter(nobodyKnown);
     expect(adapter.name).toBe('facebook');
     expect(adapter.supports(search, findCityByKey('modiin')!)).toBe(false);
+  });
+});
+
+describe('facebook marketplace', () => {
+  const href = 'https://www.facebook.com/marketplace/item/1129213912966742/?ref=category_feed&tracking=x';
+
+  it('reads price, title and location from a card, keyed by the item id', () => {
+    const card = parseMarketplaceCard(href, 'Just listed\n₪12,200\nליד שינקין | 3 חד׳ | חניה\nTel Aviv, Israel');
+    expect(card).toEqual({
+      itemId: '1129213912966742',
+      url: 'https://www.facebook.com/marketplace/item/1129213912966742/',
+      price: 12200,
+      title: 'ליד שינקין | 3 חד׳ | חניה',
+      location: 'Tel Aviv, Israel',
+    });
+  });
+
+  it('takes the current price of a reduced one', () => {
+    expect(parseMarketplaceCard(href, '₪8,500₪9,000\nדירה\nTel Aviv, Israel')?.price).toBe(8500);
+  });
+
+  it('skips links that are not items, and cards with no price line', () => {
+    expect(parseMarketplaceCard('https://www.facebook.com/marketplace/telaviv/', '₪5,000\nx')).toBeNull();
+    expect(parseMarketplaceCard(href, 'Sponsored')).toBeNull();
+  });
+
+  it('opens only prices that could be a month of rent', () => {
+    expect(isPlausibleRent(7_000)).toBe(true);
+    expect(isPlausibleRent(null)).toBe(true);
+    expect(isPlausibleRent(600)).toBe(false); // parking
+    expect(isPlausibleRent(4_150_000)).toBe(false); // sale
+  });
+
+  it('cuts an item page down to the listing itself', () => {
+    const page = [
+      'Marketplace', 'Categories', 'Property Rentals',
+      'דירה 3 חדרים', '₪7,000 / Month', 'Rental Location', 'תל אביב - יפו', 'Description',
+      'דירה מוארת בפלורנטין [hidden information]', ' See more',
+      'Seller information', 'Today\'s picks', '₪15', 'סנסיוורה',
+    ].join('\n');
+    const text = itemDetailsText(page, 'דירה 3 חדרים');
+    expect(text.startsWith('דירה 3 חדרים')).toBe(true);
+    expect(text).toContain('פלורנטין');
+    expect(text).not.toMatch(/Categories|hidden information|See more|Seller|סנסיוורה/);
+  });
+
+  it('is configured for Tel Aviv only, newest first', () => {
+    expect(marketplaceUrl(findCityByKey('tel-aviv')!)).toContain('/marketplace/telaviv/propertyrentals?sortBy=creation_time_descend');
+    expect(marketplaceUrl(findCityByKey('modiin')!)).toBeNull();
+  });
+
+  it('stays off without a key and a session, and never polls faster than half-hourly', () => {
+    const adapter = createMarketplaceAdapter(nobodyKnown);
+    expect(adapter.supports(search, findCityByKey('tel-aviv')!)).toBe(false);
+    expect(adapter.cadenceMinutes).toBeGreaterThanOrEqual(30);
   });
 });
 

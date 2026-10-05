@@ -1,6 +1,7 @@
 import { config } from '../config.js';
 import type { SourceAdapter, StoredListings } from '../core/types.js';
 import { createFacebookAdapter } from './facebook/fbAdapter.js';
+import { createMarketplaceAdapter } from './facebook/marketplaceAdapter.js';
 import { createGenericAdapter } from './generic/genericAdapter.js';
 import { GENERIC_CADENCE_MINUTES, GENERIC_SITES } from './generic/sites.js';
 import { homelessAdapter } from './homeless/homelessAdapter.js';
@@ -34,8 +35,8 @@ import { createYad2Adapter } from './yad2/yad2Adapter.js';
  * silently breaking a scraper. They run hourly.
  *
  * **Free-text posts** - public Telegram channels through their web preview,
- * and Facebook groups through the owner's own logged-in session (inert unless
- * FACEBOOK_ENABLED is set after a successful login). Both ask the store
+ * and Facebook groups and Marketplace through the owner's own logged-in session
+ * (inert unless FACEBOOK_ENABLED is set after a successful login). All ask the store
  * whether a post was already read, so feeds repeating the same posts for
  * days cost no model calls.
  *
@@ -59,6 +60,7 @@ export function buildAdapters(
     madlanAdapter,
     ...genericAdapters,
     createTelegramAdapter(stored),
+    createMarketplaceAdapter(stored),
     createFacebookAdapter(stored),
   ];
 

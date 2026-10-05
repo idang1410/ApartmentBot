@@ -79,7 +79,7 @@ export const CURATED_CITIES: CityEntry[] = [
   // carrying one and not the other is skipped by the richest source there is
   // with no error, no empty result and nothing in the log - Petah Tikva sat
   // in a live search that way while Yad2 held 200 rentals for it.
-  { key: 'tel-aviv', name: 'תל אביב יפו', aliases: ['תל אביב', 'תל-אביב-יפו', 'תל אביב-יפו'], realtaSlug: 'tel-aviv-yafo', yad2CityCode: 5000, yad2RegionCode: 3 },
+  { key: 'tel-aviv', name: 'תל אביב יפו', aliases: ['תל אביב', 'תל-אביב-יפו', 'תל אביב-יפו'], realtaSlug: 'tel-aviv-yafo', onmapSlug: 'tel-aviv-yafo', yad2CityCode: 5000, yad2RegionCode: 3 },
   { key: 'jerusalem', name: 'ירושלים', aliases: [], realtaSlug: 'jerusalem', yad2CityCode: 3000, yad2RegionCode: 6 },
   { key: 'haifa', name: 'חיפה', aliases: [], realtaSlug: 'haifa', yad2CityCode: 4000, yad2RegionCode: 5 },
   { key: 'ramat-gan', name: 'רמת גן', aliases: ['רמת-גן'], realtaSlug: 'ramat-gan', yad2CityCode: 8600, yad2RegionCode: 3 },

@@ -22,6 +22,9 @@ export const TELEGRAM_CHANNELS: Record<string, TelegramChannel[]> = {
     { name: 'nester_rent_rishonlezion', title: 'ראשון לציון דירות להשכרה ללא תיווך' },
   ],
   modiin: [],
+  'tel-aviv': [
+    { name: 'nester_rent_telaviv', title: 'תל אביב דירות להשכרה ללא תיווך' },
+  ],
 };
 
 export function channelsForCity(city: CityEntry): TelegramChannel[] {

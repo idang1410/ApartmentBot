@@ -1,4 +1,4 @@
-import { chromium, type BrowserContext } from 'playwright';
+import { chromium, type BrowserContext, type Page } from 'playwright';
 import { logger } from '../../logger.js';
 import { randomBetween, sleep } from '../../util/http.js';
 
@@ -24,15 +24,30 @@ export interface RawPost {
  * fresh login from an unknown device, which is what triggers checkpoints.
  */
 export async function openContext(headless: boolean): Promise<BrowserContext> {
-  return chromium.launchPersistentContext(USER_DATA_DIR, {
-    channel: 'chrome',
-    headless,
-    viewport: { width: 1280, height: 900 },
-    locale: 'he-IL',
-    timezoneId: 'Asia/Jerusalem',
-    args: ['--disable-blink-features=AutomationControlled'],
-  });
+  // Chrome opens a profile only once and both Facebook sources share this one,
+  // so a second caller waits until the first context closes.
+  const previous = profileFree;
+  let release!: () => void;
+  profileFree = new Promise((resolve) => (release = resolve));
+  await previous;
+  try {
+    const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
+      channel: 'chrome',
+      headless,
+      viewport: { width: 1280, height: 900 },
+      locale: 'he-IL',
+      timezoneId: 'Asia/Jerusalem',
+      args: ['--disable-blink-features=AutomationControlled'],
+    });
+    context.once('close', release);
+    return context;
+  } catch (error) {
+    release();
+    throw error;
+  }
 }
+
+let profileFree: Promise<void> = Promise.resolve();
 
 export class LoggedOutError extends Error {
   constructor() {
@@ -111,6 +126,40 @@ export async function readGroupPosts(
   } finally {
     await page.close();
   }
+}
+
+/**
+ * Reads the item cards from a Marketplace category page, as (link, text) pairs.
+ *
+ * Paced like readGroupPosts: one page load, a pause, one scroll.
+ */
+export async function readMarketplaceCards(
+  page: Page,
+  url: string,
+): Promise<Array<{ href: string; text: string }>> {
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+  await sleep(randomBetween(3_000, 5_000));
+
+  if (await isLoggedOut(page)) throw new LoggedOutError();
+
+  await page.mouse.wheel(0, randomBetween(600, 1_100));
+  await sleep(randomBetween(1_500, 3_000));
+
+  return page.$$eval('a[href*="/marketplace/item/"]', (links) =>
+    links.map((a) => ({ href: (a as HTMLAnchorElement).href, text: (a as HTMLElement).innerText })),
+  );
+}
+
+/** Opens one Marketplace item and returns the page's visible text. */
+export async function readMarketplaceItem(page: Page, url: string): Promise<string> {
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+  await sleep(randomBetween(3_000, 6_000));
+
+  if (await isLoggedOut(page)) throw new LoggedOutError();
+
+  await page.mouse.wheel(0, randomBetween(300, 700));
+  await sleep(randomBetween(1_000, 2_500));
+  return page.evaluate(() => document.body.innerText);
 }
 
 /** True when Facebook is showing a login form instead of the feed. */

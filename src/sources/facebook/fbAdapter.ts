@@ -23,7 +23,7 @@ const SOURCE = 'facebook';
 const POSTS_PER_GROUP = 15;
 /** Posts the model has already judged are not sent again for a day. */
 const PARSED_TTL_MS = 24 * 60 * 60 * 1000;
-const LOGIN_INSTRUCTION = 'npm run fb-login';
+export const LOGIN_INSTRUCTION = 'npm run fb-login';
 
 /**
  * Reads the owner's Facebook groups and turns free-text posts into listings.
@@ -130,12 +130,18 @@ async function readGroups(groups: string[]): Promise<RawPost[]> {
  * failing on every group, every cycle. An explicit flag makes the state
  * unambiguous: set FACEBOOK_ENABLED=1 after `npm run fb-login` succeeds.
  */
-function hasLoginProfile(): boolean {
+export function hasLoginProfile(): boolean {
   if (!config.facebookEnabled) return false;
   return existsSync(join(USER_DATA_DIR, 'Default'));
 }
 
-function toListing(post: RawPost, parsed: ParsedPost, city: CityEntry): Listing | null {
+export function toListing(
+  post: RawPost,
+  parsed: ParsedPost,
+  city: CityEntry,
+  source = SOURCE,
+  originalSource = 'קבוצת פייסבוק',
+): Listing | null {
   if (!parsed.isRentalListing || parsed.isWantedPost) return null;
 
   // Posts often omit the city because the group implies it; assume the
@@ -154,7 +160,7 @@ function toListing(post: RawPost, parsed: ParsedPost, city: CityEntry): Listing 
   const entryDate = parseEntryDate(parsed.entryDateText);
 
   return {
-    source: SOURCE,
+    source,
     sourceId: post.postId,
     url: post.url,
     price: parsed.price,
@@ -172,7 +178,7 @@ function toListing(post: RawPost, parsed: ParsedPost, city: CityEntry): Listing 
     ...(parsed.entryDateText ? { entryText: parsed.entryDateText } : {}),
     ...(entryDate ? { entryDate } : {}),
     ...(phone ? { phone } : {}),
-    originalSource: 'קבוצת פייסבוק',
+    originalSource,
     ...(parsed.isBroker !== null ? { isBroker: parsed.isBroker } : {}),
   };
 }
