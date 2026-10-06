@@ -167,7 +167,7 @@ describe('map data', () => {
       fetched.push(url.searchParams.get('q')!);
       return new Response('[]');
     }) as unknown as typeof fetch);
-    const row = (l: Listing) => ({ listing: l, matchKind: 'exact' as const, firstSeen: '2026-10-01 10:00:00' });
+    const row = (l: Listing) => ({ listing: l, matchKind: 'exact' as const, searchId: 1, firstSeen: '2026-10-01 10:00:00' });
 
     const { pins, pending } = mapPins(
       [

@@ -17,6 +17,7 @@ import {
   orderSnapshot,
   type SearchSnapshot,
 } from './latest.js';
+import { REVIEW_DAYS, reviewQueue, type ReviewItem } from './review.js';
 import { KV_KEYS, type KvRepo } from '../db/kv.repo.js';
 import { sqliteNow, type ListingsRepo } from '../db/listings.repo.js';
 import type { SearchesRepo } from '../db/searches.repo.js';
@@ -47,6 +48,7 @@ export const HELP_TEXT = [
   '/remove - מחיקת חיפוש',
   '/map - מפה של הדירות שהתאימו ב-14 הימים האחרונים',
   '/tracked - דירות שסימנת (/tracked all כולל לא רלוונטיות)',
+  '/review - מעבר על הדירות שהתאימו ב-30 הימים האחרונים לסימון (/review new רק מה שלא סימנת)',
   'תשובה (reply) להתראה נשמרת כהערה, ומספר טלפון בה נשמר לדירה',
   '/pause · /resume - השהיה וחידוש של כל ההתראות',
   '/status - מצב המערכת והמקורות',
@@ -354,6 +356,60 @@ function priceDistance(
   if (search.maxPrice !== null && price > search.maxPrice) return price - search.maxPrice;
   if (search.minPrice !== null && price < search.minPrice) return search.minPrice - price;
   return 0;
+}
+
+/**
+ * A chat's last /review queue. Paging walks this list rather than a fresh one,
+ * so a flat marked on one page does not shift the next page.
+ */
+const reviewSessions = new Map<number, ReviewItem[]>();
+
+/** Sends the chat's stored matches again as alert cards, to go over and mark. */
+export async function handleReview(ctx: Context, deps: CommandDeps, argument: string): Promise<void> {
+  const chat = chatOf(ctx);
+  const onlyUnmarked = argument.trim() === 'new';
+  const searches = deps.searches.list(chat).filter((s) => s.active);
+  const queue = reviewQueue(deps.listings, searches, chat, onlyUnmarked);
+  if (queue.length === 0) {
+    await ctx.reply(
+      onlyUnmarked
+        ? `אין דירות שעוד לא סימנת מ-${REVIEW_DAYS} הימים האחרונים.`
+        : `אין דירות שהתאימו ב-${REVIEW_DAYS} הימים האחרונים.`,
+    );
+    return;
+  }
+  reviewSessions.set(chat, queue);
+  await sendReviewPage(ctx, deps, queue, 0);
+}
+
+/** The "more" button under a /review page: review:<offset>. */
+export async function handleReviewCallback(ctx: Context, deps: CommandDeps, data: string): Promise<void> {
+  const queue = reviewSessions.get(chatOf(ctx));
+  if (!queue) {
+    await ctx.reply('הרשימה התיישנה. שלח /review שוב.');
+    return;
+  }
+  await sendReviewPage(ctx, deps, queue, Number(data.split(':')[1]) || 0);
+}
+
+async function sendReviewPage(ctx: Context, deps: CommandDeps, queue: ReviewItem[], offset: number): Promise<void> {
+  const page = queue.slice(offset, offset + CARDS_PAGE);
+  for (const { listing, matchKind, search } of page) {
+    const reason = matchKind === 'near' ? nearMissReason(listing, search) : null;
+    const header = reason ? `🤏 <b>כמעט מתאים</b> · ${escapeHtml(reason)}` : undefined;
+    await deps.notifier.sendPreview(listing, chatOf(ctx), header);
+  }
+
+  const shown = offset + page.length;
+  if (page.length === 0) {
+    await ctx.reply('אין עוד דירות לסקירה.');
+  } else if (shown < queue.length) {
+    await ctx.reply(`הצגתי ${shown} מתוך ${queue.length}`, {
+      reply_markup: new InlineKeyboard().text('עוד ▶', `review:${shown}`),
+    });
+  } else {
+    await ctx.reply(`הצגתי ${shown} מתוך ${queue.length}. זה הכל.`);
+  }
 }
 
 /** A link to this chat's map, served from this machine on the local network. */

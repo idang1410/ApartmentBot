@@ -36,6 +36,7 @@ interface TrackedRow {
 export interface MatchedListing {
   listing: Listing;
   matchKind: MatchKind;
+  searchId: number;
   /** SQLite UTC timestamp, "YYYY-MM-DD HH:MM:SS". */
   firstSeen: string;
 }
@@ -322,12 +323,17 @@ export class ListingsRepo {
 
   /**
    * Listings that matched one of this chat's active searches in the last
-   * `days`, newest first, one per fingerprint.
+   * `days`, newest first, one per fingerprint. With `kindOf`, the match kind
+   * is worked out again and a listing it returns null for is left out.
    */
-  matchedRecently(chatId: number, days: number): MatchedListing[] {
+  matchedRecently(
+    chatId: number,
+    days: number,
+    kindOf?: (listing: Listing, searchId: number) => MatchKind | null,
+  ): MatchedListing[] {
     const rows = this.db
       .prepare(
-        `SELECT l.payload, l.match_kind, l.first_seen, l.fingerprint FROM seen_listings l
+        `SELECT l.payload, l.match_kind, l.search_id, l.first_seen, l.fingerprint FROM seen_listings l
            JOIN saved_searches s ON s.id = l.search_id AND s.active = 1
           WHERE l.chat_id = ? AND l.payload IS NOT NULL
             AND COALESCE(l.match_kind, 'exact') IN ('exact', 'near')
@@ -337,6 +343,7 @@ export class ListingsRepo {
       .all(chatId, `-${days} days`) as Array<{
       payload: string;
       match_kind: string | null;
+      search_id: number;
       first_seen: string;
       fingerprint: string | null;
     }>;
@@ -344,19 +351,18 @@ export class ListingsRepo {
     const seen = new Set<string>();
     const matched: MatchedListing[] = [];
     for (const row of rows) {
-      if (row.fingerprint) {
-        if (seen.has(row.fingerprint)) continue;
-        seen.add(row.fingerprint);
-      }
+      if (row.fingerprint && seen.has(row.fingerprint)) continue;
+      let listing: Listing;
       try {
-        matched.push({
-          listing: reviveListing(row.payload),
-          matchKind: row.match_kind === 'near' ? 'near' : 'exact',
-          firstSeen: row.first_seen,
-        });
+        listing = reviveListing(row.payload);
       } catch {
         // An unreadable payload is left off the map.
+        continue;
       }
+      const matchKind = kindOf ? kindOf(listing, row.search_id) : row.match_kind === 'near' ? 'near' : 'exact';
+      if (matchKind === null) continue;
+      if (row.fingerprint) seen.add(row.fingerprint);
+      matched.push({ listing, matchKind, searchId: row.search_id, firstSeen: row.first_seen });
     }
     return matched;
   }

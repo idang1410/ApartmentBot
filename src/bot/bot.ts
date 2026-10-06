@@ -26,6 +26,8 @@ import {
   handleQuiet,
   handleRemoveCallback,
   handleRemovePrompt,
+  handleReview,
+  handleReviewCallback,
   handleStatus,
   handleStatusCallback,
   handleTracked,
@@ -91,6 +93,7 @@ export function registerHandlers(bot: Bot, deps: BotDeps): void {
   bot.command('invite', (ctx) => handleInvite(ctx, commandDeps));
   bot.command('users', (ctx) => handleUsers(ctx, commandDeps));
   bot.command('tracked', (ctx) => handleTracked(ctx, commandDeps, ctx.match ?? ''));
+  bot.command('review', (ctx) => handleReview(ctx, commandDeps, ctx.match ?? ''));
 
   bot.command('cancel', async (ctx) => {
     if (ctx.chat) wizard.cancel(ctx.chat.id);
@@ -113,6 +116,8 @@ export function registerHandlers(bot: Bot, deps: BotDeps): void {
       await handleRemoveCallback(ctx, commandDeps, data.slice(3));
     } else if (data.startsWith('latest:')) {
       await handleLatestCallback(ctx, commandDeps, data);
+    } else if (data.startsWith('review:')) {
+      await handleReviewCallback(ctx, commandDeps, data);
     }
   });
 
