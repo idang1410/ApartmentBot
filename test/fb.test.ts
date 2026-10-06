@@ -4,7 +4,7 @@ import { findCityByKey } from '../src/core/cities.js';
 import { SessionExpiredError } from '../src/core/types.js';
 import type { SavedSearch } from '../src/core/types.js';
 import { createFacebookAdapter } from '../src/sources/facebook/fbAdapter.js';
-import { groupsForCity } from '../src/sources/facebook/fbGroups.js';
+import { FACEBOOK_GROUPS, ROTATING_GROUPS, groupsForCity, groupsToRead } from '../src/sources/facebook/fbGroups.js';
 import {
   isPlausibleRent,
   itemDetailsText,
@@ -26,6 +26,19 @@ describe('facebook configuration', () => {
   it('has a group list per city, with Modi’in preset', () => {
     expect(groupsForCity(findCityByKey('modiin')!).length).toBeGreaterThan(0);
     expect(groupsForCity(findCityByKey('haifa')!)).toEqual([]);
+  });
+
+  it('reads every fixed group each run and rotates through the rest', () => {
+    const telAviv = findCityByKey('tel-aviv')!;
+    const fixed = FACEBOOK_GROUPS['tel-aviv']!;
+    const rotating = ROTATING_GROUPS['tel-aviv']!;
+    const seen = new Set<string>();
+    for (let run = 0; run < Math.ceil(rotating.length / 12); run++) {
+      const groups = groupsToRead(telAviv);
+      expect(groups.slice(0, fixed.length)).toEqual(fixed);
+      groups.slice(fixed.length).forEach((g) => seen.add(g));
+    }
+    expect(seen.size).toBe(rotating.length);
   });
 
   it('builds an adapter that stays off without a key and a session', () => {

@@ -17,7 +17,7 @@ import { randomBetween, sleep } from '../../util/http.js';
 import { parseEntryDate, parsePostedDate } from '../../util/time.js';
 import { ParsedPostCache } from '../parsedPostCache.js';
 import { LoggedOutError, openContext, readGroupPosts, USER_DATA_DIR, type RawPost } from './fbBrowser.js';
-import { groupsForCity } from './fbGroups.js';
+import { groupsForCity, groupsToRead } from './fbGroups.js';
 
 const SOURCE = 'facebook';
 const POSTS_PER_GROUP = 15;
@@ -55,7 +55,7 @@ export function createFacebookAdapter(stored: StoredListings): SourceAdapter {
     },
 
     async fetchListings(_search: SavedSearch, city: CityEntry): Promise<Listing[]> {
-      const groups = groupsForCity(city);
+      const groups = groupsToRead(city);
       if (groups.length === 0) return [];
 
       const posts = await readGroups(groups);

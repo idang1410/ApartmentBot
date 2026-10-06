@@ -5,9 +5,13 @@ const context = await openContext(true);
 const page = await context.newPage();
 await page.goto('https://www.facebook.com/groups/joins/?nav_source=tab', { waitUntil: 'domcontentloaded' });
 await page.waitForTimeout(4000);
-for (let i = 0; i < 8; i++) {
+// Scroll until three rounds in a row load no new group links.
+for (let count = 0, idle = 0; idle < 3; ) {
   await page.mouse.wheel(0, 2500);
   await page.waitForTimeout(1500 + Math.random() * 1000);
+  const now = await page.locator('a[href*="/groups/"]').count();
+  idle = now === count ? idle + 1 : 0;
+  count = now;
 }
 const groups = await page.$$eval('a[href*="/groups/"]', (links) =>
   links.map((a) => ({ href: (a as HTMLAnchorElement).href, name: a.textContent?.trim() ?? '' })),
