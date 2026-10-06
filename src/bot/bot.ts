@@ -27,7 +27,7 @@ import {
   handleRemoveCallback,
   handleRemovePrompt,
   handleReview,
-  handleReviewCallback,
+  handleCardsCallback,
   handleStatus,
   handleStatusCallback,
   handleTracked,
@@ -116,8 +116,8 @@ export function registerHandlers(bot: Bot, deps: BotDeps): void {
       await handleRemoveCallback(ctx, commandDeps, data.slice(3));
     } else if (data.startsWith('latest:')) {
       await handleLatestCallback(ctx, commandDeps, data);
-    } else if (data.startsWith('review:')) {
-      await handleReviewCallback(ctx, commandDeps, data);
+    } else if (data.startsWith('review:') || data.startsWith('tracked:')) {
+      await handleCardsCallback(ctx, commandDeps, data);
     }
   });
 

@@ -358,11 +358,18 @@ function priceDistance(
   return 0;
 }
 
+/** One alert card to send again, with the line shown above it. */
+interface Card {
+  listing: Listing;
+  header?: string;
+}
+
 /**
- * A chat's last /review queue. Paging walks this list rather than a fresh one,
- * so a flat marked on one page does not shift the next page.
+ * A chat's last /review or /tracked list, keyed "<command>:<chat>". Paging walks
+ * this list rather than a fresh one, so a flat marked on one page does not
+ * shift the next page.
  */
-const reviewSessions = new Map<number, ReviewItem[]>();
+const cardSessions = new Map<string, Card[]>();
 
 /** Sends the chat's stored matches again as alert cards, to go over and mark. */
 export async function handleReview(ctx: Context, deps: CommandDeps, argument: string): Promise<void> {
@@ -378,25 +385,34 @@ export async function handleReview(ctx: Context, deps: CommandDeps, argument: st
     );
     return;
   }
-  reviewSessions.set(chat, queue);
-  await sendReviewPage(ctx, deps, queue, 0);
+  const cards = queue.map(({ listing, matchKind, search }: ReviewItem) => {
+    const reason = matchKind === 'near' ? nearMissReason(listing, search) : null;
+    return { listing, ...(reason ? { header: `🤏 <b>כמעט מתאים</b> · ${escapeHtml(reason)}` } : {}) };
+  });
+  cardSessions.set(`review:${chat}`, cards);
+  await sendCardList(ctx, deps, 'review', cards, 0);
 }
 
-/** The "more" button under a /review page: review:<offset>. */
-export async function handleReviewCallback(ctx: Context, deps: CommandDeps, data: string): Promise<void> {
-  const queue = reviewSessions.get(chatOf(ctx));
-  if (!queue) {
-    await ctx.reply('הרשימה התיישנה. שלח /review שוב.');
+/** The "more" button under a /review or /tracked page: <command>:<offset>. */
+export async function handleCardsCallback(ctx: Context, deps: CommandDeps, data: string): Promise<void> {
+  const [command, offset] = data.split(':');
+  const cards = cardSessions.get(`${command}:${chatOf(ctx)}`);
+  if (!cards) {
+    await ctx.reply(`הרשימה התיישנה. שלח /${command} שוב.`);
     return;
   }
-  await sendReviewPage(ctx, deps, queue, Number(data.split(':')[1]) || 0);
+  await sendCardList(ctx, deps, command!, cards, Number(offset) || 0);
 }
 
-async function sendReviewPage(ctx: Context, deps: CommandDeps, queue: ReviewItem[], offset: number): Promise<void> {
+async function sendCardList(
+  ctx: Context,
+  deps: CommandDeps,
+  command: string,
+  queue: Card[],
+  offset: number,
+): Promise<void> {
   const page = queue.slice(offset, offset + CARDS_PAGE);
-  for (const { listing, matchKind, search } of page) {
-    const reason = matchKind === 'near' ? nearMissReason(listing, search) : null;
-    const header = reason ? `🤏 <b>כמעט מתאים</b> · ${escapeHtml(reason)}` : undefined;
+  for (const { listing, header } of page) {
     await deps.notifier.sendPreview(listing, chatOf(ctx), header);
   }
 
@@ -405,7 +421,7 @@ async function sendReviewPage(ctx: Context, deps: CommandDeps, queue: ReviewItem
     await ctx.reply('אין עוד דירות לסקירה.');
   } else if (shown < queue.length) {
     await ctx.reply(`הצגתי ${shown} מתוך ${queue.length}`, {
-      reply_markup: new InlineKeyboard().text('עוד ▶', `review:${shown}`),
+      reply_markup: new InlineKeyboard().text('עוד ▶', `${command}:${shown}`),
     });
   } else {
     await ctx.reply(`הצגתי ${shown} מתוך ${queue.length}. זה הכל.`);
@@ -513,49 +529,27 @@ export async function handleTracked(ctx: Context, deps: CommandDeps, argument: s
     return;
   }
 
-  const groups: Array<{ status: TrackStatus | null; label: string }> = [
-    ...STATUSES.map((s) => ({ status: s.code, label: s.label })),
-    { status: null, label: '📝 עם הערות' },
-  ];
-  const blocks: string[] = [];
-  for (const group of groups) {
-    const items = tracked.filter((t) => t.status === group.status);
-    if (items.length === 0) continue;
-    blocks.push(`<b>${group.label}</b> (${items.length})`);
-    for (const { listing, phone, notes } of items) {
-      const facts = [
-        listing.price === null ? 'מחיר לא צוין' : `<b>${listing.price.toLocaleString('en-US')} ₪</b>`,
-        listing.rooms !== null ? `${listing.rooms} חד׳` : null,
-        escapeHtml([listing.address, listing.neighborhood ?? listing.city].filter(Boolean).join(', ')),
-      ].filter(Boolean);
+  // Grouped by status in the order of the buttons; flats with only notes come last.
+  const order = (status: TrackStatus | null) => {
+    const index = STATUSES.findIndex((st) => st.code === status);
+    return index === -1 ? STATUSES.length : index;
+  };
+  const cards = [...tracked]
+    .sort((a, b) => order(a.status) - order(b.status))
+    .map(({ listing, status, phone, notes }) => {
       const contact = phone ?? listing.phone;
       const note = notes.at(-1)?.text;
-      blocks.push(
-        [
-          `• ${facts.join(' · ')}`,
-          contact ? `📞 ${escapeHtml(contact)}` : null,
-          note ? `📝 ${escapeHtml(note.length > 120 ? `${note.slice(0, 119)}…` : note)}` : null,
-          `<a href="${escapeHtml(listing.url)}">למודעה</a>`,
-        ]
-          .filter(Boolean)
-          .join('\n'),
-      );
-    }
-    blocks.push('');
-  }
-
-  // Telegram caps a message at 4096 characters; blocks are never split.
-  let message = '';
-  for (const block of blocks) {
-    if (message.length + block.length > 3800) {
-      await ctx.reply(message, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
-      message = '';
-    }
-    message += `${block}\n`;
-  }
-  if (message.trim()) {
-    await ctx.reply(message, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
-  }
+      const header = [
+        `<b>${status ? statusLabel(status) : '📝 עם הערות'}</b>`,
+        contact ? `📞 ${escapeHtml(contact)}` : null,
+        note ? `📝 ${escapeHtml(note.length > 120 ? `${note.slice(0, 119)}…` : note)}` : null,
+      ]
+        .filter(Boolean)
+        .join('\n');
+      return { listing, header };
+    });
+  cardSessions.set(`tracked:${chatOf(ctx)}`, cards);
+  await sendCardList(ctx, deps, 'tracked', cards, 0);
 }
 
 export async function handleNow(ctx: Context, deps: CommandDeps): Promise<void> {
