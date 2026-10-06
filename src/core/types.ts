@@ -3,6 +3,7 @@ import { z } from 'zod';
 // at runtime. The fingerprint needs the same place normalisation the area
 // filter uses, or "נהר הירדן 24" and "נהר הירדן" stay different streets.
 import { normalizeCityName, normalizePlace } from './cities.js';
+import type { TrackStatus } from './tracking.js';
 
 /** A rental listing after a source adapter has normalized it. */
 export const listingSchema = z.object({
@@ -191,6 +192,51 @@ export function listingFingerprint(listing: Listing): string | null {
     ? `a${normalizePlace(listing.address)}`
     : `m${listing.sqm}`;
   return `${normalizeCityName(listing.city)}|${listing.rooms}|${listing.price}|${discriminator}`;
+}
+
+/** Sizes within this many m² count as one flat; boards round and measure differently. */
+const SQM_TOLERANCE = 5;
+
+/**
+ * Whether two listings are one flat, ignoring price. Both need a street, and
+ * city, street and rooms must agree. Sizes, when both are known, must be close;
+ * house numbers, when both are known, must be equal. A street with no number
+ * matches a numbered one only when both sizes are known and close. Two known,
+ * different floors make it 'maybe'.
+ */
+export function sameFlat(a: Listing, b: Listing): 'same' | 'maybe' | null {
+  if (!a.address || !b.address || a.rooms === null || a.rooms !== b.rooms) return null;
+  if (normalizeCityName(a.city) !== normalizeCityName(b.city)) return null;
+  const street = normalizePlace(a.address);
+  if (!street || street !== normalizePlace(b.address)) return null;
+
+  const bothSqm = a.sqm !== undefined && b.sqm !== undefined;
+  if (bothSqm && Math.abs(a.sqm! - b.sqm!) > SQM_TOLERANCE) return null;
+  const numA = houseNumber(a.address);
+  const numB = houseNumber(b.address);
+  if (numA && numB && numA !== numB) return null;
+  if ((numA === null) !== (numB === null) && !bothSqm) return null;
+
+  const floorA = a.floor ? floorKey(a.floor) : null;
+  const floorB = b.floor ? floorKey(b.floor) : null;
+  return floorA !== null && floorB !== null && floorA !== floorB ? 'maybe' : 'same';
+}
+
+/** Another stored listing of the same flat, with the status the owner set on it. */
+export interface ListingCopy {
+  listing: Listing;
+  kind: 'same' | 'maybe';
+  status: TrackStatus | null;
+}
+
+function houseNumber(address: string): string | null {
+  return /\s(\d+[א-ת]?)\s*$/u.exec(address)?.[1] ?? null;
+}
+
+/** "קומה 3", "קומה:3 מתוך 3" and "3" are one floor; "קרקע" is 0. */
+function floorKey(floor: string): string {
+  if (floor.includes('קרקע')) return '0';
+  return /\d+/.exec(floor)?.[0] ?? floor.trim();
 }
 
 /**

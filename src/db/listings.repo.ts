@@ -1,4 +1,4 @@
-import { listingFingerprint, type Listing, type MatchKind } from '../core/types.js';
+import { listingFingerprint, sameFlat, type Listing, type ListingCopy, type MatchKind } from '../core/types.js';
 import { normalizePlace } from '../core/cities.js';
 import {
   CLOSED_STATUSES,
@@ -480,6 +480,45 @@ export class ListingsRepo {
           AND status IN (${CLOSED_STATUSES.map(() => '?').join(', ')})`,
     );
     return keys.some((key) => key !== null && closed.get(chatId, key, ...CLOSED_STATUSES) !== undefined);
+  }
+
+  /**
+   * This chat's other stored listings of the same flat from the last `days`,
+   * from any search and from its tracked flats, one per source id. A copy the
+   * chat tracked carries its status.
+   */
+  copiesOf(listing: Listing, chatId: number, days = 60): ListingCopy[] {
+    if (!listing.address || listing.rooms === null) return [];
+    const rows = this.db
+      .prepare(
+        `SELECT payload, status FROM tracked_listings
+          WHERE chat_id = ? AND json_extract(payload, '$.rooms') = ? AND updated_at >= datetime('now', ?)
+         UNION ALL
+         SELECT payload, NULL FROM seen_listings
+          WHERE chat_id = ? AND payload IS NOT NULL AND json_extract(payload, '$.rooms') = ?
+            AND first_seen >= datetime('now', ?)`,
+      )
+      .all(chatId, listing.rooms, `-${days} days`, chatId, listing.rooms, `-${days} days`) as Array<{
+      payload: string;
+      status: string | null;
+    }>;
+
+    const copies = new Map<string, ListingCopy>();
+    for (const row of rows) {
+      let other: Listing;
+      try {
+        other = reviveListing(row.payload);
+      } catch {
+        continue;
+      }
+      const key = `${other.source}:${other.sourceId}`;
+      if (copies.has(key) || key === `${listing.source}:${listing.sourceId}`) continue;
+      const kind = sameFlat(listing, other);
+      if (!kind) continue;
+      const status = isTrackStatus(row.status) ? row.status : (this.trackingOf(other, chatId)?.status ?? null);
+      copies.set(key, { listing: other, kind, status });
+    }
+    return [...copies.values()];
   }
 
   /** A listing this chat has recorded, by its source id. */

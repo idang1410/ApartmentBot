@@ -2,8 +2,8 @@ import { InlineKeyboard } from 'grammy';
 import { findCityByKey } from '../core/cities.js';
 import { classifyMatch, describeSearch, nearMissReason } from '../core/filter.js';
 import { describeComparison, type MarketComparison } from '../core/marketStats.js';
-import { STATUSES, statusCallback, type TrackStatus } from '../core/tracking.js';
-import type { Listing, SavedSearch } from '../core/types.js';
+import { STATUSES, statusCallback, statusLabel, type TrackStatus } from '../core/tracking.js';
+import type { Listing, ListingCopy, SavedSearch } from '../core/types.js';
 
 const SOURCE_LABELS: Record<string, string> = {
   homeless: 'הומלס',
@@ -58,6 +58,7 @@ export function escapeHtml(text: string): string {
 /** Telegram rejects photo captions over 1024 characters. */
 const CAPTION_LIMIT = 1024;
 const DESCRIPTION_LIMIT = 320;
+const COPIES_LIMIT = 5;
 
 /**
  * Builds the message for one listing, in the shape people actually scan:
@@ -70,6 +71,7 @@ export function formatListing(
   listing: Listing,
   _searchName?: string,
   comparison?: MarketComparison | null,
+  copies: ListingCopy[] = [],
 ): string {
   const lines: string[] = [];
 
@@ -119,9 +121,9 @@ export function formatListing(
 
   if (listing.phone) lines.push(`📞 ${escapeHtml(listing.phone)}`);
 
-  if (listing.description) {
-    lines.push('', escapeHtml(truncate(listing.description, DESCRIPTION_LIMIT)));
-  }
+  if (copies.length > 0) lines.push('', ...formatCopies(listing, copies));
+
+  const descriptionAt = lines.length;
 
   // One quiet footer: how old it is and where it came from. Both change what
   // the listing is worth - a Facebook post and an agency ad are not alike.
@@ -132,7 +134,44 @@ export function formatListing(
   ].filter(Boolean);
   lines.push('', `<i>${footer.join(' · ')}</i>`);
 
+  // The description gives way first, so the links above are never cut mid-tag.
+  if (listing.description) {
+    const room = Math.min(DESCRIPTION_LIMIT, CAPTION_LIMIT - lines.join('\n').length - 2);
+    if (room > 0) lines.splice(descriptionAt, 0, '', escapeHtml(truncate(listing.description, room)));
+  }
+
   return truncate(lines.join('\n'), CAPTION_LIMIT);
+}
+
+/**
+ * Other ads for the same flat, one line each: board, agent or private, price
+ * against this card's, and a link; a copy the owner tracked shows its status.
+ * Sure matches come first, then cheapest.
+ */
+export function formatCopies(listing: Listing, copies: ListingCopy[]): string[] {
+  const sorted = [...copies].sort(
+    (a, b) => Number(a.kind === 'maybe') - Number(b.kind === 'maybe') || (a.listing.price ?? Infinity) - (b.listing.price ?? Infinity),
+  );
+  return [
+    '👯 אותה דירה מפורסמת גם ב:',
+    ...sorted.slice(0, COPIES_LIMIT).map(({ listing: copy, kind, status }) => {
+      const diff = copy.price !== null && listing.price !== null ? copy.price - listing.price : 0;
+      const price =
+        copy.price === null
+          ? null
+          : `${copy.price.toLocaleString('en-US')} ₪` +
+            (diff === 0 ? '' : ` (${diff > 0 ? '+' : '−'}${Math.abs(diff).toLocaleString('en-US')})`);
+      const parts = [
+        status ? statusLabel(status).split(' ')[0] : null,
+        (kind === 'maybe' ? 'אולי: ' : '') + escapeHtml(copy.originalSource ?? SOURCE_LABELS[copy.source] ?? copy.source),
+        copy.isBroker === true ? 'תיווך' : copy.isBroker === false ? 'פרטי' : null,
+        price,
+        kind === 'maybe' && copy.floor ? escapeHtml(copy.floor) : null,
+        `<a href="${escapeHtml(copy.url)}">מודעה</a>`,
+      ].filter(Boolean);
+      return `• ${parts.join(' · ')}`;
+    }),
+  ];
 }
 
 /**

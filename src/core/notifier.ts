@@ -158,7 +158,12 @@ export class Notifier {
     searchName: string | undefined,
     header?: string,
   ): Promise<boolean> {
-    const body = formatListing(listing, searchName, compareToMarket(listing, this.market));
+    const body = formatListing(
+      listing,
+      searchName,
+      compareToMarket(listing, this.market),
+      this.listings.copiesOf(listing, chatId),
+    );
     const caption = header ? `${header}\n\n${body}` : body;
     const id = this.listings.track(listing, chatId);
     const keyboard = listingKeyboard(listing, { id, status: this.listings.tracked(id, chatId)?.status ?? null });
