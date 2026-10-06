@@ -6,7 +6,8 @@ import type { Notifier } from '../core/notifier.js';
 import type { PollCycle } from '../core/pollCycle.js';
 import type { Scheduler } from '../core/scheduler.js';
 import type { Listing, SavedSearch } from '../core/types.js';
-import { describeSearchScope, escapeHtml, searchTitle } from './format.js';
+import { STATUSES, parseStatusCallback, statusLabel, type TrackStatus } from '../core/tracking.js';
+import { describeSearchScope, escapeHtml, listingKeyboard, searchTitle } from './format.js';
 import {
   CARDS_PAGE,
   DIGEST_PAGE,
@@ -45,6 +46,8 @@ export const HELP_TEXT = [
   '/latest - מה יש בשוק כרגע (גם אם כבר נשלח)',
   '/remove - מחיקת חיפוש',
   '/map - מפה של הדירות שהתאימו ב-14 הימים האחרונים',
+  '/tracked - דירות שסימנת (/tracked all כולל לא רלוונטיות)',
+  'תשובה (reply) להתראה נשמרת כהערה, ומספר טלפון בה נשמר לדירה',
   '/pause · /resume - השהיה וחידוש של כל ההתראות',
   '/status - מצב המערכת והמקורות',
   '/now - הרצת סבב סריקה עכשיו',
@@ -406,6 +409,97 @@ export async function handleUsers(ctx: Context, deps: CommandDeps): Promise<void
     ['<b>משתמשים</b>', '', ...lines, '', `הזמנות שלא נוצלו: ${pending}`].join('\n'),
     { parse_mode: 'HTML' },
   );
+}
+
+/** A status button under an alert: st:<tracking id>:<status>. */
+export async function handleStatusCallback(ctx: Context, deps: CommandDeps, data: string): Promise<void> {
+  const parsed = parseStatusCallback(data);
+  const tracked = parsed && deps.listings.tracked(parsed.id, chatOf(ctx));
+  if (!parsed || !tracked) {
+    await ctx.answerCallbackQuery({ text: 'הדירה לא נמצאה.' }).catch(() => undefined);
+    return;
+  }
+  deps.listings.setStatus(parsed.id, chatOf(ctx), parsed.status);
+  await ctx.answerCallbackQuery({ text: `סומן: ${statusLabel(parsed.status)}` }).catch(() => undefined);
+  await ctx
+    .editMessageReplyMarkup({ reply_markup: listingKeyboard(tracked.listing, parsed) })
+    .catch(() => undefined);
+}
+
+/**
+ * Saves a text reply to an alert as a note on that flat. The alert is
+ * recognised by the status buttons on it. Returns false for any other message.
+ */
+export async function handleTrackedReply(ctx: Context, deps: CommandDeps): Promise<boolean> {
+  const replied = ctx.message?.reply_to_message;
+  const text = ctx.message?.text;
+  if (!replied || !text || replied.from?.id !== ctx.me.id) return false;
+
+  const id = replied.reply_markup?.inline_keyboard
+    .flat()
+    .map((button) => ('callback_data' in button ? parseStatusCallback(button.callback_data) : null))
+    .find((parsed) => parsed !== null)?.id;
+  if (id === undefined) return false;
+
+  const saved = deps.listings.addNote(id, chatOf(ctx), text);
+  await ctx.reply(
+    saved ? `📝 ההערה נשמרה${saved.phone ? ` · 📞 ${saved.phone}` : ''}` : 'הדירה לא נמצאה.',
+    { reply_parameters: { message_id: ctx.message!.message_id } },
+  );
+  return true;
+}
+
+/** Tracked flats grouped by status; rejected ones only with `all`. */
+export async function handleTracked(ctx: Context, deps: CommandDeps, argument: string): Promise<void> {
+  const tracked = deps.listings.listTracked(chatOf(ctx), argument.trim() === 'all');
+  if (tracked.length === 0) {
+    await ctx.reply('עוד לא סימנת דירות. לחץ על כפתור סטטוס מתחת להתראה.');
+    return;
+  }
+
+  const groups: Array<{ status: TrackStatus | null; label: string }> = [
+    ...STATUSES.map((s) => ({ status: s.code, label: s.label })),
+    { status: null, label: '📝 עם הערות' },
+  ];
+  const blocks: string[] = [];
+  for (const group of groups) {
+    const items = tracked.filter((t) => t.status === group.status);
+    if (items.length === 0) continue;
+    blocks.push(`<b>${group.label}</b> (${items.length})`);
+    for (const { listing, phone, notes } of items) {
+      const facts = [
+        listing.price === null ? 'מחיר לא צוין' : `<b>${listing.price.toLocaleString('en-US')} ₪</b>`,
+        listing.rooms !== null ? `${listing.rooms} חד׳` : null,
+        escapeHtml([listing.address, listing.neighborhood ?? listing.city].filter(Boolean).join(', ')),
+      ].filter(Boolean);
+      const contact = phone ?? listing.phone;
+      const note = notes.at(-1)?.text;
+      blocks.push(
+        [
+          `• ${facts.join(' · ')}`,
+          contact ? `📞 ${escapeHtml(contact)}` : null,
+          note ? `📝 ${escapeHtml(note.length > 120 ? `${note.slice(0, 119)}…` : note)}` : null,
+          `<a href="${escapeHtml(listing.url)}">למודעה</a>`,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      );
+    }
+    blocks.push('');
+  }
+
+  // Telegram caps a message at 4096 characters; blocks are never split.
+  let message = '';
+  for (const block of blocks) {
+    if (message.length + block.length > 3800) {
+      await ctx.reply(message, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+      message = '';
+    }
+    message += `${block}\n`;
+  }
+  if (message.trim()) {
+    await ctx.reply(message, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+  }
 }
 
 export async function handleNow(ctx: Context, deps: CommandDeps): Promise<void> {

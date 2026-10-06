@@ -27,6 +27,9 @@ import {
   handleRemoveCallback,
   handleRemovePrompt,
   handleStatus,
+  handleStatusCallback,
+  handleTracked,
+  handleTrackedReply,
   ownerHint,
   type CommandDeps,
 } from './commands.js';
@@ -87,6 +90,7 @@ export function registerHandlers(bot: Bot, deps: BotDeps): void {
   bot.command('quiet', (ctx) => handleQuiet(ctx, commandDeps, ctx.match ?? ''));
   bot.command('invite', (ctx) => handleInvite(ctx, commandDeps));
   bot.command('users', (ctx) => handleUsers(ctx, commandDeps));
+  bot.command('tracked', (ctx) => handleTracked(ctx, commandDeps, ctx.match ?? ''));
 
   bot.command('cancel', async (ctx) => {
     if (ctx.chat) wizard.cancel(ctx.chat.id);
@@ -95,6 +99,11 @@ export function registerHandlers(bot: Bot, deps: BotDeps): void {
 
   bot.on('callback_query:data', async (ctx) => {
     const data = ctx.callbackQuery.data;
+    // Answered by the handler itself, with a toast.
+    if (data.startsWith('st:')) {
+      await handleStatusCallback(ctx, commandDeps, data);
+      return;
+    }
     // Telegram shows a loading spinner on the button until this is answered.
     await ctx.answerCallbackQuery().catch(() => undefined);
 
@@ -111,6 +120,9 @@ export function registerHandlers(bot: Bot, deps: BotDeps): void {
   bot.on('message:text', async (ctx) => {
     if (!ctx.chat) return;
     const text = ctx.message.text;
+
+    // A reply to an alert is a note on that flat, whatever else is in progress.
+    if (await handleTrackedReply(ctx, commandDeps)) return;
 
     if (wizard.isActive(ctx.chat.id)) {
       await wizard.handleText(ctx, text);

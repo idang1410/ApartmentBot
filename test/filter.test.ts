@@ -300,8 +300,8 @@ describe('near-miss matching', () => {
     expect(classifyMatch(listing({ price: 7_300, rooms: 3 }), band)).toBeNull();
   });
 
-  it('classifies half a room short or over as near', () => {
-    expect(classifyMatch(listing({ price: 6_000, rooms: 2.5 }), band)).toBe('near');
+  it('classifies half a room over as near, and any room short as no match', () => {
+    expect(classifyMatch(listing({ price: 6_000, rooms: 2.5 }), band)).toBeNull();
     expect(classifyMatch(listing({ price: 6_000, rooms: 4.5 }), band)).toBe('near');
     expect(classifyMatch(listing({ price: 6_000, rooms: 2 }), band)).toBeNull();
   });
@@ -331,7 +331,6 @@ describe('near-miss matching', () => {
   it('explains a near miss in the owner’s terms', () => {
     expect(nearMissReason(listing({ price: 4_950, rooms: 3 }), band)).toBe('4,950 ₪ - מתחת למינימום ב-1%');
     expect(nearMissReason(listing({ price: 7_000, rooms: 3 }), band)).toBe('7,000 ₪ - מעל המקסימום ב-8%');
-    expect(nearMissReason(listing({ price: 6_000, rooms: 2.5 }), band)).toBe('2.5 חד׳ - חצי חדר פחות מהמינימום');
     expect(nearMissReason(listing({ price: 7_000, rooms: 4.5 }), band)).toBe(
       '7,000 ₪ - מעל המקסימום ב-8% · 4.5 חד׳ - חצי חדר יותר מהמקסימום',
     );

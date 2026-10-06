@@ -90,6 +90,12 @@ export class Notifier {
       const reason = item.matchKind === 'near' && search ? nearMissReason(item.listing, search) : null;
       const header = reason ? `🤏 <b>כמעט מתאים</b> · ${escapeHtml(reason)}` : undefined;
 
+      // Rejected or taken since it was queued.
+      if (this.listings.isClosed(item.listing, chatId)) {
+        this.listings.markNotified(item.listing.source, item.listing.sourceId, chatId);
+        continue;
+      }
+
       const delivered = await this.sendListing(chatId, item.listing, search?.name, header);
       if (delivered) {
         this.listings.markNotified(item.listing.source, item.listing.sourceId, chatId);
@@ -154,7 +160,8 @@ export class Notifier {
   ): Promise<boolean> {
     const body = formatListing(listing, searchName, compareToMarket(listing, this.market));
     const caption = header ? `${header}\n\n${body}` : body;
-    const keyboard = listingKeyboard(listing);
+    const id = this.listings.track(listing, chatId);
+    const keyboard = listingKeyboard(listing, { id, status: this.listings.tracked(id, chatId)?.status ?? null });
     const photo = pickPhoto(listing);
 
     try {

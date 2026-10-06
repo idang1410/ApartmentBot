@@ -213,9 +213,8 @@ function priceVerdict(listing: Listing, search: SavedSearch): Verdict {
 function roomsVerdict(listing: Listing, search: SavedSearch): Verdict {
   const rooms = listing.rooms;
   if (rooms === null) return 'in';
-  if (search.minRooms !== null && rooms < search.minRooms) {
-    return search.minRooms - rooms <= NEAR_ROOMS ? 'near' : 'out';
-  }
+  // The room minimum is a hard floor; only the maximum has a near band.
+  if (search.minRooms !== null && rooms < search.minRooms) return 'out';
   if (search.maxRooms !== null && rooms > search.maxRooms) {
     return rooms - search.maxRooms <= NEAR_ROOMS ? 'near' : 'out';
   }
@@ -252,11 +251,7 @@ export function nearMissReason(listing: Listing, search: SavedSearch): string | 
 
   const rooms = listing.rooms;
   if (rooms !== null && roomsVerdict(listing, search) === 'near') {
-    if (search.minRooms !== null && rooms < search.minRooms) {
-      parts.push(`${rooms} חד׳ - חצי חדר פחות מהמינימום`);
-    } else if (search.maxRooms !== null && rooms > search.maxRooms) {
-      parts.push(`${rooms} חד׳ - חצי חדר יותר מהמקסימום`);
-    }
+    parts.push(`${rooms} חד׳ - חצי חדר יותר מהמקסימום`);
   }
 
   const missing = missingAmenities(listing, search.requirements?.amenities);

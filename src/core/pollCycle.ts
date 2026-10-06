@@ -260,7 +260,10 @@ export class PollCycle {
       const current = unseen.filter((l) => !backCatalogue.has(listingKey(l)));
 
       const firstSighting = current.filter((l) => !known.has(l.source));
-      const genuinelyNew = current.filter((l) => known.has(l.source));
+      // A flat the owner rejected or saw taken is recorded but never alerted again.
+      const closed = current.filter((l) => known.has(l.source) && this.listings.isClosed(l, search.chatId));
+      if (closed.length > 0) this.listings.seedAsSeen(closed, search.id, search.chatId, kindOf);
+      const genuinelyNew = current.filter((l) => known.has(l.source) && !closed.includes(l));
 
       if (firstSighting.length > 0) {
         this.listings.seedAsSeen(firstSighting, search.id, search.chatId, kindOf);

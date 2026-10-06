@@ -2,6 +2,7 @@ import { InlineKeyboard } from 'grammy';
 import { findCityByKey } from '../core/cities.js';
 import { classifyMatch, describeSearch, nearMissReason } from '../core/filter.js';
 import { describeComparison, type MarketComparison } from '../core/marketStats.js';
+import { STATUSES, statusCallback, type TrackStatus } from '../core/tracking.js';
 import type { Listing, SavedSearch } from '../core/types.js';
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -137,9 +138,13 @@ export function formatListing(
 /**
  * The buttons under a listing: the ad itself, a map when there is a street,
  * and WhatsApp when the ad published a number - the two things a person does
- * next after deciding a flat is interesting.
+ * next after deciding a flat is interesting. With a tracking id, the status
+ * buttons follow, the current one ticked.
  */
-export function listingKeyboard(listing: Listing): InlineKeyboard {
+export function listingKeyboard(
+  listing: Listing,
+  tracking?: { id: number; status: TrackStatus | null },
+): InlineKeyboard {
   const keyboard = new InlineKeyboard().url('פתח מודעה ↗', listing.url);
 
   if (listing.address) {
@@ -149,6 +154,13 @@ export function listingKeyboard(listing: Listing): InlineKeyboard {
 
   const whatsapp = whatsappUrl(listing.phone);
   if (whatsapp) keyboard.row().url('WhatsApp 💬', whatsapp);
+
+  if (tracking) {
+    for (const [index, { code, label }] of STATUSES.entries()) {
+      if (index % 3 === 0) keyboard.row();
+      keyboard.text(`${code === tracking.status ? '✓ ' : ''}${label}`, statusCallback(tracking.id, code));
+    }
+  }
 
   return keyboard;
 }

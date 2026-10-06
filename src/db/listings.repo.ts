@@ -1,5 +1,14 @@
 import { listingFingerprint, type Listing, type MatchKind } from '../core/types.js';
 import { normalizePlace } from '../core/cities.js';
+import {
+  CLOSED_STATUSES,
+  NOTE_LIMIT,
+  findPhone,
+  isTrackStatus,
+  type TrackNote,
+  type TrackStatus,
+  type Tracking,
+} from '../core/tracking.js';
 import type { Db } from './database.js';
 
 export interface PendingListing {
@@ -7,6 +16,21 @@ export interface PendingListing {
   searchId: number | null;
   chatId: number;
   matchKind: MatchKind;
+}
+
+/** A tracked flat with the copy of the listing it was last shown as. */
+export interface TrackedListing extends Tracking {
+  listing: Listing;
+  updatedAt: string;
+}
+
+interface TrackedRow {
+  id: number;
+  status: string | null;
+  phone: string | null;
+  notes: string | null;
+  payload: string;
+  updated_at: string;
 }
 
 export interface MatchedListing {
@@ -151,7 +175,7 @@ export class ListingsRepo {
       if (!row || row.price === null) continue;
       if (listing.price >= row.price) continue;
 
-      drops.push({ listing, previousPrice: row.price });
+      if (!this.isClosed(listing, chatId)) drops.push({ listing, previousPrice: row.price });
       updatePrice.run(
         listing.price,
         JSON.stringify(listing),
@@ -354,6 +378,114 @@ export class ListingsRepo {
     return result.changes;
   }
 
+  /**
+   * The key a listing is tracked under for this chat. A recorded listing keeps
+   * the fingerprint it was first seen with, so a price drop, which changes the
+   * fingerprint, still finds the same flat.
+   */
+  private trackingKey(listing: Listing, chatId: number): string {
+    const row = this.db
+      .prepare(
+        `SELECT COALESCE(fingerprint, source || ':' || listing_id) AS key FROM seen_listings
+          WHERE chat_id = ? AND source = ? AND listing_id = ?`,
+      )
+      .get(chatId, listing.source, listing.sourceId) as { key: string } | undefined;
+    return row?.key ?? listingFingerprint(listing) ?? `${listing.source}:${listing.sourceId}`;
+  }
+
+  /** The tracking id for a listing, created on first use; the stored copy is refreshed. */
+  track(listing: Listing, chatId: number): number {
+    const row = this.db
+      .prepare(
+        `INSERT INTO tracked_listings (chat_id, fingerprint, payload) VALUES (?, ?, ?)
+         ON CONFLICT (chat_id, fingerprint) DO UPDATE SET payload = excluded.payload
+         RETURNING id`,
+      )
+      .get(chatId, this.trackingKey(listing, chatId), JSON.stringify(listing)) as { id: number };
+    return row.id;
+  }
+
+  /** A tracked flat, only if it belongs to this chat. */
+  tracked(id: number, chatId: number): TrackedListing | undefined {
+    const row = this.db
+      .prepare('SELECT * FROM tracked_listings WHERE id = ? AND chat_id = ?')
+      .get(id, chatId) as TrackedRow | undefined;
+    return row ? toTracked(row) : undefined;
+  }
+
+  /** What this chat recorded about a listing, without creating anything. */
+  trackingOf(listing: Listing, chatId: number): Tracking | undefined {
+    const row = this.db
+      .prepare('SELECT * FROM tracked_listings WHERE chat_id = ? AND fingerprint = ?')
+      .get(chatId, this.trackingKey(listing, chatId)) as TrackedRow | undefined;
+    return row ? toTracked(row) : undefined;
+  }
+
+  setStatus(id: number, chatId: number, status: TrackStatus): boolean {
+    return (
+      this.db
+        .prepare(
+          `UPDATE tracked_listings SET status = ?, updated_at = datetime('now')
+            WHERE id = ? AND chat_id = ?`,
+        )
+        .run(status, id, chatId).changes > 0
+    );
+  }
+
+  /** Appends a note, cut to NOTE_LIMIT, and records the phone number it names, if any. */
+  addNote(id: number, chatId: number, text: string): TrackedListing | undefined {
+    const current = this.tracked(id, chatId);
+    const note = text.trim().slice(0, NOTE_LIMIT);
+    if (!current || !note) return undefined;
+    const notes: TrackNote[] = [...current.notes, { at: sqliteNow(), text: note }];
+    const phone = findPhone(note) ?? current.phone;
+    this.db
+      .prepare(
+        `UPDATE tracked_listings SET notes = ?, phone = ?, updated_at = datetime('now')
+          WHERE id = ? AND chat_id = ?`,
+      )
+      .run(JSON.stringify(notes), phone, id, chatId);
+    return { ...current, notes, phone };
+  }
+
+  /** Flats this chat set a status on or wrote about, most recently touched first. */
+  listTracked(chatId: number, includeRejected: boolean): TrackedListing[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM tracked_listings
+          WHERE chat_id = ? AND (status IS NOT NULL OR notes IS NOT NULL)
+            AND (? OR COALESCE(status, '') != 'rejected')
+          ORDER BY updated_at DESC`,
+      )
+      .all(chatId, includeRejected ? 1 : 0) as TrackedRow[];
+    return rows.map(toTracked);
+  }
+
+  /**
+   * True when this chat marked the flat rejected or taken, under the key it was
+   * recorded with or under its fingerprint as listed now - the second is how
+   * a sighting on another board is caught.
+   */
+  isClosed(listing: Listing, chatId: number): boolean {
+    const keys = [this.trackingKey(listing, chatId), listingFingerprint(listing)];
+    const closed = this.db.prepare(
+      `SELECT 1 FROM tracked_listings WHERE chat_id = ? AND fingerprint = ?
+          AND status IN (${CLOSED_STATUSES.map(() => '?').join(', ')})`,
+    );
+    return keys.some((key) => key !== null && closed.get(chatId, key, ...CLOSED_STATUSES) !== undefined);
+  }
+
+  /** A listing this chat has recorded, by its source id. */
+  findSeen(source: string, sourceId: string, chatId: number): Listing | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT payload FROM seen_listings
+          WHERE chat_id = ? AND source = ? AND listing_id = ? AND payload IS NOT NULL`,
+      )
+      .get(chatId, source, sourceId) as { payload: string } | undefined;
+    return row ? reviveListing(row.payload) : undefined;
+  }
+
   private insertMany(
     listings: Listing[],
     searchId: number,
@@ -397,6 +529,17 @@ export class ListingsRepo {
  */
 export function sqliteNow(at: Date = new Date()): string {
   return at.toISOString().replace('T', ' ').slice(0, 19);
+}
+
+function toTracked(row: TrackedRow): TrackedListing {
+  return {
+    id: row.id,
+    status: isTrackStatus(row.status) ? row.status : null,
+    phone: row.phone,
+    notes: row.notes ? (JSON.parse(row.notes) as TrackNote[]) : [],
+    listing: reviveListing(row.payload),
+    updatedAt: row.updated_at,
+  };
 }
 
 function reviveListing(payload: string): Listing {

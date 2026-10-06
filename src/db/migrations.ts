@@ -132,4 +132,21 @@ export const MIGRATIONS: string[] = [
     fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   `,
+  // Where the owner stands with each flat. Keyed by fingerprint, not source id,
+  // because one flat can arrive from several boards; a listing too vague to
+  // fingerprint uses "source:listing_id". The payload is kept so /tracked
+  // outlives the pruning of seen_listings. Notes are a JSON array of {at, text}.
+  `
+  CREATE TABLE tracked_listings (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id     INTEGER NOT NULL,
+    fingerprint TEXT    NOT NULL,
+    status      TEXT,
+    phone       TEXT,
+    notes       TEXT,
+    payload     TEXT    NOT NULL,
+    updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (chat_id, fingerprint)
+  );
+  `,
 ];

@@ -1,4 +1,7 @@
-/** The map page. It reads its token from its own URL and fetches /api/listings with it. */
+/**
+ * The map page. It reads its token from its own URL, fetches /api/listings
+ * with it, and posts status and note changes to /api/status and /api/note.
+ */
 export const MAP_PAGE = `<!doctype html>
 <html lang="he" dir="rtl">
 <head>
@@ -19,17 +22,21 @@ export const MAP_PAGE = `<!doctype html>
   .popup img { width: 100%; max-height: 140px; object-fit: cover; border-radius: 4px; margin-bottom: 4px; }
   .popup b { font-size: 16px; }
   .muted { color: #666; font-size: 12px; }
+  .track { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+  .track textarea { font: inherit; min-height: 40px; }
 </style>
 </head>
 <body>
 <div id="map"></div>
 <div id="bar">
   <label><input type="checkbox" id="exact"> מדויקות בלבד</label>
+  <label><input type="checkbox" id="rejected"> הצג לא רלוונטיות</label>
   <label>עד <select id="days">
     <option>1</option><option>3</option><option>7</option><option selected>14</option>
   </select> ימים</label>
   <span><span class="dot" style="background:#1a7f37"></span> מדויק
-    <span class="dot" style="background:#e8890c"></span> קרוב</span>
+    <span class="dot" style="background:#e8890c"></span> קרוב
+    <span class="dot" style="background:#1f6feb"></span> מסומן</span>
   <span id="count" class="muted"></span>
 </div>
 <script>
@@ -44,8 +51,53 @@ let pins = [], pending = 0, retry;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const safeUrl = (u) => /^https?:\\/\\//.test(u ?? '') ? esc(u) : '';
+const STATUSES = [['interested', '⭐ מעניין', '#d4a106'], ['contacted', '📞 בקשר', '#1f6feb'],
+  ['visit_scheduled', '📅 נקבע ביקור', '#8250df'], ['visited', '👀 ביקרתי', '#0a7d74'],
+  ['rejected', '❌ לא רלוונטי', '#999'], ['taken', '🚫 נלקח', '#444']];
 
-function popup(p) {
+function trackForm(p, i) {
+  const options = STATUSES.map(([code, label]) =>
+    '<option value="' + code + '"' + (p.status === code ? ' selected' : '') + '>' + label + '</option>').join('');
+  const notes = (p.notes ?? []).map((n) =>
+    '<div class="muted">' + esc(n.at.slice(0, 16)) + ' · ' + esc(n.text) + '</div>').join('');
+  return '<div class="track">' + (p.phone ? '<div>📞 ' + esc(p.phone) + '</div>' : '') + notes +
+    '<select data-status="' + i + '"><option value="">סטטוס…</option>' + options + '</select>' +
+    '<textarea data-note="' + i + '" maxlength="500" placeholder="הערה או טלפון"></textarea>' +
+    '<button data-save="' + i + '">שמור הערה</button></div>';
+}
+
+async function post(path, body) {
+  const res = await fetch(path + '?t=' + encodeURIComponent(token), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(res.status);
+  return res.json();
+}
+
+async function change(i, path, body) {
+  const p = pins[i];
+  try {
+    const { status, phone, notes } = await post(path, { ref: p.ref, ...body });
+    Object.assign(p, { status, phone, notes });
+    map.closePopup();
+    draw();
+  } catch (e) {
+    alert('השמירה נכשלה');
+  }
+}
+
+document.addEventListener('change', (e) => {
+  const i = e.target.dataset?.status;
+  if (i !== undefined && e.target.value) change(Number(i), 'api/status', { status: e.target.value });
+});
+document.addEventListener('click', (e) => {
+  const i = e.target.dataset?.save;
+  if (i === undefined) return;
+  const text = document.querySelector('[data-note="' + i + '"]').value.trim();
+  if (text) change(Number(i), 'api/note', { text });
+});
+
+function popup(p, i) {
   const facts = [p.rooms && p.rooms + ' חד׳', p.sqm && p.sqm + ' מ״ר'].filter(Boolean).join(' · ');
   const img = safeUrl(p.image) ? '<img src="' + safeUrl(p.image) + '" loading="lazy">' : '';
   return '<div class="popup">' + img +
@@ -55,22 +107,25 @@ function popup(p) {
     '<div class="muted">' + esc(p.source) + ' · ' + (p.matchKind === 'near' ? 'קרוב' : 'מדויק') +
     ' · נראה ' + new Date(p.firstSeen).toLocaleDateString('he-IL') + '</div>' +
     (safeUrl(p.url) ? '<a href="' + safeUrl(p.url) + '" target="_blank" rel="noopener">למודעה</a>' : '') +
-    '</div>';
+    trackForm(p, i) + '</div>';
 }
 
 function draw() {
   const exactOnly = document.getElementById('exact').checked;
+  const showRejected = document.getElementById('rejected').checked;
   const since = Date.now() - Number(document.getElementById('days').value) * 86400000;
   layer.clearLayers();
   let shown = 0;
-  for (const p of pins) {
+  for (const [i, p] of pins.entries()) {
     if (exactOnly && p.matchKind !== 'exact') continue;
+    if (!showRejected && p.status === 'rejected') continue;
     if (Date.parse(p.firstSeen) < since) continue;
-    const color = p.matchKind === 'exact' ? '#1a7f37' : '#e8890c';
+    const tracked = STATUSES.find(([code]) => code === p.status);
+    const color = tracked ? tracked[2] : p.matchKind === 'exact' ? '#1a7f37' : '#e8890c';
     const marker = p.approximate
       ? L.circle([p.lat, p.lng], { radius: 300, color, weight: 2, dashArray: '6 6', fillOpacity: 0.1 })
       : L.circleMarker([p.lat, p.lng], { radius: 9, color: '#fff', weight: 2, fillColor: color, fillOpacity: 0.9 });
-    marker.bindPopup(popup(p), { maxWidth: 260 }).addTo(layer);
+    marker.bindPopup(popup(p, i), { maxWidth: 260 }).addTo(layer);
     shown++;
   }
   document.getElementById('count').textContent =
@@ -91,6 +146,7 @@ async function load() {
 }
 
 document.getElementById('exact').onchange = draw;
+document.getElementById('rejected').onchange = draw;
 document.getElementById('days').onchange = draw;
 load();
 setInterval(load, 5 * 60 * 1000);
