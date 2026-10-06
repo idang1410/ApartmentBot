@@ -1,5 +1,5 @@
 import { classifyMatch } from '../core/filter.js';
-import type { SavedSearch } from '../core/types.js';
+import type { Listing, SavedSearch } from '../core/types.js';
 import type { ListingsRepo, MatchedListing } from '../db/listings.repo.js';
 
 /** How far back /review looks. */
@@ -22,16 +22,20 @@ export function reviewQueue(
   chatId: number,
   onlyUnmarked: boolean,
 ): ReviewItem[] {
-  const byId = new Map(searches.map((s) => [s.id, s]));
+  // Any active search may claim a listing, whichever search stored it.
+  const claim = (listing: Listing) => {
+    for (const search of searches) {
+      const kind = classifyMatch(listing, search);
+      if (kind) return { search, kind };
+    }
+    return null;
+  };
   const items = listings
-    .matchedRecently(chatId, REVIEW_DAYS, (listing, searchId) => {
-      const search = byId.get(searchId);
-      return search ? classifyMatch(listing, search) : null;
-    })
+    .matchedRecently(chatId, REVIEW_DAYS, (listing) => claim(listing)?.kind ?? null)
     .filter((m) => !listings.isClosed(m.listing, chatId))
     .map((m) => ({
       ...m,
-      search: byId.get(m.searchId)!,
+      search: claim(m.listing)!.search,
       marked: (listings.trackingOf(m.listing, chatId)?.status ?? null) !== null,
     }));
   const unmarked = items.filter((item) => !item.marked);

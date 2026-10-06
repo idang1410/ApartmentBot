@@ -87,6 +87,13 @@ describe('/review queue', () => {
     expect(reviewQueue(repo, [search], CHAT, false)).toHaveLength(1);
   });
 
+  it('includes flats stored by a search that was since deleted', () => {
+    const old = new SearchesRepo(db).create({ ...search, name: 'old' });
+    repo.seedAsSeen([ad('1')], old.id, CHAT);
+    new SearchesRepo(db).remove(old.id);
+    expect(ids()).toEqual(['1']);
+  });
+
   it('leaves out searches it was not given', () => {
     seen(ad('1'), 1);
     expect(reviewQueue(repo, [], CHAT, false)).toEqual([]);

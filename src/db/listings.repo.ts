@@ -323,8 +323,9 @@ export class ListingsRepo {
 
   /**
    * Listings that matched one of this chat's active searches in the last
-   * `days`, newest first, one per fingerprint. With `kindOf`, the match kind
-   * is worked out again and a listing it returns null for is left out.
+   * `days`, newest first, one per fingerprint. With `kindOf`, every stored
+   * listing of the chat is a candidate, whichever search stored it: the match
+   * kind is worked out again and a listing it returns null for is left out.
    */
   matchedRecently(
     chatId: number,
@@ -334,7 +335,7 @@ export class ListingsRepo {
     const rows = this.db
       .prepare(
         `SELECT l.payload, l.match_kind, l.search_id, l.first_seen, l.fingerprint FROM seen_listings l
-           JOIN saved_searches s ON s.id = l.search_id AND s.active = 1
+           ${kindOf ? '' : 'JOIN saved_searches s ON s.id = l.search_id AND s.active = 1'}
           WHERE l.chat_id = ? AND l.payload IS NOT NULL
             AND COALESCE(l.match_kind, 'exact') IN ('exact', 'near')
             AND l.first_seen >= datetime('now', ?)
