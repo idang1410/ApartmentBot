@@ -3,7 +3,9 @@ import { config } from '../src/config.js';
 import { findCityByKey } from '../src/core/cities.js';
 import { SessionExpiredError } from '../src/core/types.js';
 import type { SavedSearch } from '../src/core/types.js';
-import { createFacebookAdapter } from '../src/sources/facebook/fbAdapter.js';
+import { createFacebookAdapter, toListing } from '../src/sources/facebook/fbAdapter.js';
+import { postLink, postText } from '../src/sources/facebook/fbBrowser.js';
+import { parsedPostSchema } from '../src/llm/extractPosts.js';
 import { FACEBOOK_GROUPS, ROTATING_GROUPS, groupsForCity, groupsToRead } from '../src/sources/facebook/fbGroups.js';
 import {
   isPlausibleRent,
@@ -45,6 +47,39 @@ describe('facebook configuration', () => {
     const adapter = createFacebookAdapter(nobodyKnown);
     expect(adapter.name).toBe('facebook');
     expect(adapter.supports(search, findCityByKey('modiin')!)).toBe(false);
+  });
+});
+
+describe('facebook group posts', () => {
+  it('keys a post by its permalink', () => {
+    expect(
+      postLink(
+        [
+          'https://www.facebook.com/groups/42/user/7/?__cft__[0]=x',
+          'https://www.facebook.com/groups/42/posts/123/?__cft__[0]=x',
+        ],
+        '42',
+      ),
+    ).toEqual({ postId: '123', url: 'https://www.facebook.com/groups/42/posts/123/' });
+  });
+
+  it('falls back to the post id in photo links, then to a wrapped Marketplace item', () => {
+    expect(postLink(['https://www.facebook.com/photo/?fbid=9&set=pcb.456&__cft__[0]=x'], '42')).toEqual({
+      postId: '456',
+      url: 'https://www.facebook.com/groups/42/posts/456/',
+    });
+    expect(postLink(['https://www.facebook.com/commerce/listing/789/?ref=share_attachment'], '42')?.postId).toBe('789');
+    expect(postLink(['https://www.facebook.com/groups/42/?__cft__[0]=x'], '42')).toBeNull();
+  });
+
+  it('drops the hidden runs of "Facebook" from the text', () => {
+    expect(postText('Facebook\nFacebook Facebook\nדנה  · Follow\nדירת 3 חדרים ביפו')).toBe('דנה · Follow דירת 3 חדרים ביפו');
+  });
+
+  it('takes a post in Jaffa as Tel Aviv', () => {
+    const parsed = parsedPostSchema.parse({ index: 0, isRentalListing: true, amenities: [], city: 'יפו', price: 6000 });
+    const post = { postId: '1', groupSlug: '42', text: 'דירה ביפו', url: 'https://www.facebook.com/groups/42/posts/1/' };
+    expect(toListing(post, parsed, findCityByKey('tel-aviv')!)?.price).toBe(6000);
   });
 });
 
