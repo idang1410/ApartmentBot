@@ -34,14 +34,20 @@ const SEQUENCE_BASELINE = 'seq_baseline:';
  */
 const SEQUENCE_HIGH = 'seq_high:';
 
+/** Sources read through the owner's Facebook account. */
+const FACEBOOK_SOURCES = new Set(['facebook', 'facebook-marketplace']);
+
+/** A forced cycle skips a Facebook source that ran less than this many minutes ago, to protect the account. */
+export const FORCED_FACEBOOK_GAP_MINUTES = 10;
+
 /**
  * How long a whole preview may spend fetching before it answers with what it
- * has. Only /latest and /add seeding are bounded this way; the poll cycle runs
+ * has. Only /add seeding is bounded this way; the poll cycle runs
  * unattended and can afford to wait.
  *
  * A model-read source takes tens of seconds, and `util/retry` gives it three
  * attempts at a 45-second timeout apiece - so one unlucky source could hold a
- * /latest for well over two minutes while the person watched nothing happen.
+ * seeding for well over two minutes while the person watched nothing happen.
  * Forty-five seconds buys every source one honest attempt and abandons the
  * retries.
  */
@@ -136,6 +142,13 @@ export interface CycleResult {
   priceDrops: number;
   notificationsSent: number;
   failures: string[];
+  /** Listings fetched and failed fetches, per source that ran. */
+  bySource: Record<string, { listings: number; failures: number }>;
+}
+
+export interface RunOptions {
+  /** Run every source regardless of its cadence, except a Facebook source within its gap. */
+  force?: boolean;
 }
 
 /**
@@ -169,14 +182,18 @@ export class PollCycle {
    * A source that has never run is still due immediately, so adding one does
    * not mean waiting out its full interval first.
    */
-  private isDue(adapter: SourceAdapter): boolean {
-    return isCadenceDue(
-      this.kv.get(`${SOURCE_LAST_RUN}${adapter.name}`),
-      adapter.cadenceMinutes,
-    );
+  private isDue(adapter: SourceAdapter, force = false): boolean {
+    const lastRun = this.kv.get(`${SOURCE_LAST_RUN}${adapter.name}`);
+    if (!force) return isCadenceDue(lastRun, adapter.cadenceMinutes);
+    return !FACEBOOK_SOURCES.has(adapter.name) || isCadenceDue(lastRun, FORCED_FACEBOOK_GAP_MINUTES);
   }
 
-  async run(): Promise<CycleResult> {
+  /** The Facebook sources a forced cycle would skip right now. */
+  forcedSkips(): string[] {
+    return this.adapters.filter((a) => !this.isDue(a, true)).map((a) => a.name);
+  }
+
+  async run(options: RunOptions = {}): Promise<CycleResult> {
     this.cycleNumber++;
     const result: CycleResult = {
       searchesPolled: 0,
@@ -185,6 +202,7 @@ export class PollCycle {
       priceDrops: 0,
       notificationsSent: 0,
       failures: [],
+      bySource: {},
     };
 
     if (this.kv.getBoolean(KV_KEYS.globalPaused)) {
@@ -194,7 +212,7 @@ export class PollCycle {
 
     // Eligibility is decided once per cycle, not once per search: the backoff
     // counter must tick down with cycles, however many searches are saved.
-    const eligible = this.adapters.filter((a) => this.isDue(a) && !this.health.shouldSkip(a.name));
+    const eligible = this.adapters.filter((a) => this.isDue(a, options.force) && !this.health.shouldSkip(a.name));
     for (const adapter of eligible) {
       this.kv.set(`${SOURCE_LAST_RUN}${adapter.name}`, new Date().toISOString());
     }
@@ -335,10 +353,12 @@ export class PollCycle {
     for (const [index, outcome] of settled.entries()) {
       const adapter = active[index];
       if (!adapter) continue;
+      const counts = (result.bySource[adapter.name] ??= { listings: 0, failures: 0 });
 
       if (outcome.status === 'fulfilled') {
         collected.push(...outcome.value.listings);
         result.listingsFetched += outcome.value.listings.length;
+        counts.listings += outcome.value.listings.length;
 
         const recovered = this.health.recordSuccess(adapter.name);
         // A best-effort source that comes back IS worth announcing - that is
@@ -348,6 +368,7 @@ export class PollCycle {
       }
 
       const error = outcome.reason;
+      counts.failures++;
 
       // A login the owner must renew: tell them once, with the command, and
       // let the source wait. Nothing else in the cycle is affected.
@@ -433,32 +454,6 @@ export class PollCycle {
     return { seeded, snapshot };
   }
 
-  /**
-   * Everything on offer right now, ignoring what has already been notified.
-   * Backs /latest, which answers "is my search too narrow?" - a question the
-   * alert stream cannot answer, because it stays silent either way.
-   */
-  async preview(search: SavedSearch): Promise<MarketSnapshot> {
-    return this.collect(search);
-  }
-
-  /**
-   * Previews several searches with each city fetched once. Two searches on
-   * Modi'in - one person with two price bands - must not cost two sweeps.
-   */
-  async previewAll(
-    searches: SavedSearch[],
-    budgetMs = PREVIEW_BUDGET_MS,
-  ): Promise<Map<number, MarketSnapshot>> {
-    const deadline = Date.now() + budgetMs;
-    const cityCache = new Map<string, Listing[]>();
-    const snapshots = new Map<number, MarketSnapshot>();
-    for (const search of searches) {
-      snapshots.set(search.id, await this.collect(search, cityCache, deadline));
-    }
-    return snapshots;
-  }
-
   private async collect(
     search: SavedSearch,
     cityCache = new Map<string, Listing[]>(),
@@ -489,12 +484,12 @@ export class PollCycle {
     city: CityEntry,
     deadline: number,
   ): Promise<Listing[]> {
-    // Concurrent, like the poll cycle: /latest waits on a person, and one slow
+    // Concurrent, like the poll cycle: seeding waits on a person, and one slow
     // source should not hold up the other eight.
     //
     // The health check is the same one `run` applies, and leaving it out here
-    // was a real bug rather than a shortcut: every /latest and every /add
-    // re-probed Madlan while it was serving bot-protection pages, which is
+    // was a real bug rather than a shortcut: every /add re-probed Madlan
+    // while it was serving bot-protection pages, which is
     // precisely what deepens a block - and cost the person 15-40 seconds of
     // waiting for a source that has never returned a single listing.
     const active = this.adapters.filter(

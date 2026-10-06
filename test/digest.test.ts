@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { LatestSessions, formatDigest, latestKeyboard, orderSnapshot } from '../src/bot/latest.js';
+import { formatDigest, orderSnapshot } from '../src/bot/digest.js';
 import { HealthTracker } from '../src/core/health.js';
 import { Notifier } from '../src/core/notifier.js';
 import { PollCycle } from '../src/core/pollCycle.js';
-import { BlockedError, type Listing, type SavedSearch, type SourceAdapter } from '../src/core/types.js';
+import { BlockedError, type Listing, type SourceAdapter } from '../src/core/types.js';
 import { openDatabase, type Db } from '../src/db/database.js';
 import { KvRepo } from '../src/db/kv.repo.js';
 import { ListingsRepo } from '../src/db/listings.repo.js';
@@ -68,34 +68,7 @@ describe('market digest', () => {
   });
 });
 
-describe('latest keyboard', () => {
-  it('offers more pages and cards, with callback data inside Telegram’s 64-byte limit', () => {
-    const buttons = latestKeyboard({ searchIndex: 1, offset: 0, pageSize: 10, total: 25 }).inline_keyboard.flat();
-    const more = buttons.find((b) => b.text.includes('עוד')) as { callback_data: string };
-    expect(more.callback_data).toBe('latest:digest:1:10');
-    const cards = buttons.find((b) => b.text.includes('כרטיסים')) as { callback_data: string };
-    expect(cards.callback_data).toBe('latest:cards:1:0');
-    for (const b of buttons) expect(Buffer.byteLength((b as { callback_data: string }).callback_data)).toBeLessThanOrEqual(64);
-  });
-
-  it('drops the "more" button on the last page', () => {
-    const buttons = latestKeyboard({ searchIndex: 0, offset: 20, pageSize: 10, total: 25 }).inline_keyboard.flat();
-    expect(buttons.find((b) => b.text.includes('עוד'))).toBeUndefined();
-  });
-});
-
-describe('latest sessions', () => {
-  it('remembers a chat’s snapshot for a while so paging does not refetch', () => {
-    let now = 1_000;
-    const sessions = new LatestSessions(60_000, () => now);
-    sessions.set(7, [{ search: { id: 1 } as SavedSearch, matching: [listing()], near: [], all: [listing()] }]);
-    expect(sessions.get(7)?.[0]?.matching).toHaveLength(1);
-    now += 61_000;
-    expect(sessions.get(7)).toBeUndefined();
-  });
-});
-
-describe('previewing a chat’s searches', () => {
+describe('seeding a search', () => {
   let db: Db;
   let calls: string[];
   let cycle: PollCycle;
@@ -126,17 +99,6 @@ describe('previewing a chat’s searches', () => {
       minRooms: null, maxRooms: null, minPrice: null, maxPrice,
     });
 
-  it('fetches each city once however many searches cover it', async () => {
-    const a = create(null);
-    const b = create(6_000);
-    const snapshots = await cycle.previewAll([a, b]);
-    expect(calls).toEqual(['modiin']);
-    expect(snapshots.get(a.id)?.matching).toHaveLength(1);
-    // 6,300 against a 6,000 cap is a near miss, not a match.
-    expect(snapshots.get(b.id)?.matching).toHaveLength(0);
-    expect(snapshots.get(b.id)?.near).toHaveLength(1);
-  });
-
   it('returns the seeded snapshot so a caller can show the market without refetching', async () => {
     const a = create(null);
     const { seeded, snapshot } = await cycle.seedSearch(a);
@@ -149,7 +111,7 @@ describe('the market list collapses one flat carried by several boards', () => {
   const snapshot = (matching: Listing[], near: Listing[] = []) => ({ matching, near, all: [...matching, ...near] });
 
   /**
-   * Measured on real data: a 134-card /latest carried 14 flats twice or more,
+   * Measured on real data: a 134-card market list carried 14 flats twice or more,
    * 16 redundant cards. The alert stream already collapsed these; the market
    * list pooled every source and showed them all.
    */
@@ -198,7 +160,7 @@ describe('the market list collapses one flat carried by several boards', () => {
   });
 });
 
-describe('a preview does not fetch sources the poll cycle would skip', () => {
+describe('seeding does not fetch sources the poll cycle would skip', () => {
   let db: Db;
   let searches: SearchesRepo;
   let health: HealthTracker;
@@ -238,37 +200,14 @@ describe('a preview does not fetch sources the poll cycle would skip', () => {
 
   /**
    * Madlan answers a bot-protection page in 15-40 seconds and has never
-   * returned a listing. The poll cycle backs off from it; /latest and /add
-   * did not, so every button press re-probed a blocked source - which is
-   * what deepens the block - and made a person wait for it.
+   * returned a listing. The poll cycle backs off from it, and seeding must too.
    */
   it('skips a source that is in backoff after being blocked', async () => {
-    health.recordFailure('blocked', new BlockedError('blocked', 'bot page'), true);
-    const cycle = build([named('blocked', async () => []), named('fine', async () => [listing()])]);
-
-    const snapshots = await cycle.previewAll([search()]);
-
-    expect(calls).toEqual(['fine']);
-    expect(snapshots.get(1)?.all).toHaveLength(1);
-  });
-
-  it('seeding a new search skips it too', async () => {
     health.recordFailure('blocked', new BlockedError('blocked', 'bot page'), true);
     const cycle = build([named('blocked', async () => []), named('fine', async () => [listing()])]);
 
     await cycle.seedSearch(search());
 
     expect(calls).toEqual(['fine']);
-  });
-
-  it('gives up on a source that outlasts the deadline instead of making a person wait', async () => {
-    const cycle = build([
-      named('slow', () => new Promise(() => {})),
-      named('fast', async () => [listing()]),
-    ]);
-
-    const snapshots = await cycle.previewAll([search()], 40);
-
-    expect(snapshots.get(1)?.all).toHaveLength(1);
   });
 });

@@ -18,7 +18,7 @@ const silentNotifier = {
 } as unknown as Notifier;
 
 describe('which fetches count as reads', () => {
-  it('flags previews and seeding as previews, and leaves poll cycles unflagged', async () => {
+  it('flags seeding as a preview, and leaves poll cycles unflagged', async () => {
     const flags: Array<boolean | undefined> = [];
     const adapter: SourceAdapter = {
       name: 'fake',
@@ -45,10 +45,9 @@ describe('which fetches count as reads', () => {
       maxPrice: null,
     });
 
-    await cycle.previewAll([search]);
     await cycle.seedSearch(search);
     await cycle.run();
 
-    expect(flags).toEqual([true, true, undefined]);
+    expect(flags).toEqual([true, undefined]);
   });
 });

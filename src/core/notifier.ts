@@ -133,8 +133,8 @@ export class Notifier {
   }
 
   /**
-   * Sends a listing on demand without touching its notified state, so /latest
-   * can show what is on the market without affecting the alert stream.
+   * Sends a listing on demand without touching its notified state, so /review
+   * and /tracked can show it again without affecting the alert stream.
    */
   async sendPreview(listing: Listing, chatId: number, header?: string): Promise<void> {
     await this.sendListing(chatId, listing, undefined, header);

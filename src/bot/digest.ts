@@ -1,16 +1,8 @@
-import { InlineKeyboard } from 'grammy';
 import type { MarketSnapshot } from '../core/pollCycle.js';
-import { listingFingerprint, type Listing, type SavedSearch } from '../core/types.js';
+import { listingFingerprint, type Listing } from '../core/types.js';
 import { escapeHtml, formatPostedAt, newestFirst } from './format.js';
 
-/** One search's view of the market, kept for paging. */
-export interface SearchSnapshot extends MarketSnapshot {
-  search: SavedSearch;
-}
-
-/** How many one-line entries a digest page carries; ten fits a phone screen. */
-export const DIGEST_PAGE = 10;
-/** Photo cards per page - each is a separate message, so far fewer. */
+/** Photo cards per page; each is a separate message. */
 export const CARDS_PAGE = 5;
 
 export interface DigestOptions {
@@ -24,7 +16,7 @@ export interface DigestOptions {
 /**
  * The market as a list: one line per flat with the four facts that decide a
  * click, and the link. A person scanning twenty flats wants a table, not
- * twenty photos; the cards are one button away.
+ * twenty photos.
  */
 export function formatDigest(listings: Listing[], options: DigestOptions): string {
   return listings
@@ -86,53 +78,4 @@ function collapseDuplicates(listings: Listing[]): Listing[] {
   }
 
   return kept;
-}
-
-export interface PageRef {
-  searchIndex: number;
-  offset: number;
-  pageSize: number;
-  total: number;
-}
-
-/**
- * Paging buttons. Callback data is capped at 64 bytes by Telegram, so the
- * buttons carry indexes into the chat's remembered snapshot, never content.
- */
-export function latestKeyboard(page: PageRef): InlineKeyboard {
-  const keyboard = new InlineKeyboard();
-  keyboard.text('🖼 כרטיסים', `latest:cards:${page.searchIndex}:${page.offset}`);
-  const next = page.offset + page.pageSize;
-  if (next < page.total) {
-    keyboard.text(`⬇️ הצג עוד (${page.total - next})`, `latest:digest:${page.searchIndex}:${next}`);
-  }
-  return keyboard;
-}
-
-/**
- * The snapshots /latest fetched for a chat, kept briefly so paging through
- * them does not hit every source again. In memory: a page a few minutes old
- * is fine, and a restart simply asks for /latest once more.
- */
-export class LatestSessions {
-  private readonly sessions = new Map<number, { at: number; snapshots: SearchSnapshot[] }>();
-
-  constructor(
-    private readonly ttlMs: number,
-    private readonly now: () => number = Date.now,
-  ) {}
-
-  set(chatId: number, snapshots: SearchSnapshot[]): void {
-    this.sessions.set(chatId, { at: this.now(), snapshots });
-  }
-
-  get(chatId: number): SearchSnapshot[] | undefined {
-    const session = this.sessions.get(chatId);
-    if (!session) return undefined;
-    if (this.now() - session.at > this.ttlMs) {
-      this.sessions.delete(chatId);
-      return undefined;
-    }
-    return session.snapshots;
-  }
 }

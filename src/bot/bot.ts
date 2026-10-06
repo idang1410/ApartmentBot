@@ -16,8 +16,6 @@ import { AddWizard } from './addWizard.js';
 import {
   HELP_TEXT,
   handleInvite,
-  handleLatest,
-  handleLatestCallback,
   handleList,
   handleMap,
   handleNow,
@@ -69,12 +67,12 @@ export function registerHandlers(bot: Bot, deps: BotDeps): void {
     const joined = deps.users.get(chatId);
     // Alerts only speak when something is new, which reads as silence to a
     // person who just set up a search. Point at the command that shows the
-    // market as it stands.
+    // flats that matched.
     const greeting = joined?.isOwner
       ? 'שלום! אני מנטר מודעות שכירות ומודיע לך על כל מודעה חדשה שמתאימה.\n' +
-        'שלח /latest בכל רגע כדי לראות מה יש בשוק עכשיו.'
+        'שלח /review בכל רגע כדי לראות את הדירות שהתאימו.'
       : 'שלום! הצטרפת לבוט. הגדר חיפוש עם /add ותקבל התראה על כל מודעה חדשה שמתאימה.\n' +
-        'אחרי שתגדיר חיפוש, /latest יראה לך מה יש בשוק עכשיו.';
+        'אחרי שתגדיר חיפוש, /review יראה לך את הדירות שהתאימו.';
 
     await ctx.reply(`${greeting}\n\n${HELP_TEXT}`, { parse_mode: 'HTML' });
   });
@@ -82,7 +80,6 @@ export function registerHandlers(bot: Bot, deps: BotDeps): void {
   bot.command('help', (ctx) => ctx.reply(HELP_TEXT, { parse_mode: 'HTML' }));
   bot.command('add', (ctx) => wizard.start(ctx));
   bot.command('list', (ctx) => handleList(ctx, commandDeps));
-  bot.command('latest', (ctx) => handleLatest(ctx, commandDeps));
   bot.command('remove', (ctx) => handleRemovePrompt(ctx, commandDeps));
   bot.command('pause', (ctx) => handlePause(ctx, commandDeps, true));
   bot.command('resume', (ctx) => handlePause(ctx, commandDeps, false));
@@ -114,8 +111,6 @@ export function registerHandlers(bot: Bot, deps: BotDeps): void {
       await wizard.handleCallback(ctx, data);
     } else if (data.startsWith('rm:')) {
       await handleRemoveCallback(ctx, commandDeps, data.slice(3));
-    } else if (data.startsWith('latest:')) {
-      await handleLatestCallback(ctx, commandDeps, data);
     } else if (data.startsWith('review:') || data.startsWith('tracked:')) {
       await handleCardsCallback(ctx, commandDeps, data);
     }

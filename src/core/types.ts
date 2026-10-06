@@ -125,7 +125,7 @@ export interface CityEntry {
 /** How a fetch will be used. */
 export interface FetchOptions {
   /**
-   * True for /latest previews and new-search seeding. A source that remembers what it has
+   * True for new-search seeding. A source that remembers what it has
    * read (Yad2's page walk) may use that memory but must not add to it: only a poll cycle
    * hands listings to the alert path, so only a poll cycle may mark them as read.
    */

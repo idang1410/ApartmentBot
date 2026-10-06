@@ -94,7 +94,7 @@ describe('yad2 page walking', () => {
   });
 
   it('lets a preview read deep without counting what it read', async () => {
-    // /latest and new-search seeding never alert. If their reads counted, the next poll
+    // New-search seeding never alerts. If its reads counted, the next poll
     // cycle would stop early and never hand those ads to the alert path.
     const { calls, fetchPage } = recording((n) => page(tokensFor('x', n)));
     const adapter = createYad2Adapter(fetchPage);

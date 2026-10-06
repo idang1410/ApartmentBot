@@ -46,7 +46,7 @@ function listing(overrides: Partial<Listing> = {}): Listing {
 describe('normalizePlace', () => {
   it('strips the house number so a street matches itself', () => {
     // The normalized form is a comparison key, never shown to anyone - the
-    // wizard and /latest print the raw spelling a source published. So the
+    // wizard prints the raw spelling a source published. So the
     // invariant is that both forms agree, not what the key happens to be.
     expect(normalizePlace('רוטשילד 64')).toBe('רוטשילד');
     expect(normalizePlace('עמק איילון 4')).toBe(normalizePlace('עמק איילון'));

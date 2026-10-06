@@ -10,7 +10,7 @@ import {
 import { lookupPlaces } from '../core/places.js';
 import { AMENITY_VOCABULARY, describeSearch, nearMissReason } from '../core/filter.js';
 import { applyDraftToExisting, type SearchDraft } from '../llm/parseSearchRequest.js';
-import { CARDS_PAGE, formatDigest, orderSnapshot } from './latest.js';
+import { CARDS_PAGE, formatDigest, orderSnapshot } from './digest.js';
 import type { PollCycle } from '../core/pollCycle.js';
 import type { SavedSearch, SearchRequirements } from '../core/types.js';
 import type { ListingsRepo } from '../db/listings.repo.js';
@@ -807,7 +807,7 @@ export class AddWizard {
       // what is out there - and whether the bounds are drawn right.
       const ordered = orderSnapshot(snapshot, () => false);
       if (ordered.length === 0) {
-        await ctx.reply('אין כרגע אף מודעה שתואמת, מתוך ' + `${snapshot.all.length} בעיר. שלח /latest בכל רגע.`);
+        await ctx.reply('אין כרגע אף מודעה שתואמת, מתוך ' + `${snapshot.all.length} בעיר.`);
         return;
       }
       const counts =
@@ -821,7 +821,7 @@ export class AddWizard {
             alreadySent: () => false,
             nearMiss: (l) => (snapshot.near.includes(l) ? nearMissReason(l, search) : null),
           }) +
-          (ordered.length > CARDS_PAGE ? `\n\n…ועוד ${ordered.length - CARDS_PAGE}. הרשימה המלאה: /latest` : '\n\nהרשימה המלאה בכל רגע: /latest'),
+          (ordered.length > CARDS_PAGE ? `\n\n…ועוד ${ordered.length - CARDS_PAGE}.` : ''),
         { parse_mode: 'HTML', link_preview_options: { is_disabled: true } },
       );
     } catch (error) {

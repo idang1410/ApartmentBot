@@ -12,12 +12,11 @@ const bot = new Bot(config.telegramBotToken);
 await bot.api.setMyCommands([
   { command: 'add', description: 'הוספת חיפוש חדש' },
   { command: 'list', description: 'החיפושים השמורים שלי' },
-  { command: 'latest', description: 'מה יש בשוק כרגע' },
   { command: 'map', description: 'מפת הדירות שהתאימו' },
   { command: 'tracked', description: 'דירות שסימנתי' },
   { command: 'review', description: 'מעבר על דירות שהתאימו לסימון' },
   { command: 'status', description: 'מצב המערכת והמקורות' },
-  { command: 'now', description: 'הרצת סריקה עכשיו' },
+  { command: 'now', description: 'סריקה מלאה עכשיו' },
   { command: 'remove', description: 'מחיקת חיפוש' },
   { command: 'pause', description: 'השהיית התראות' },
   { command: 'resume', description: 'חידוש התראות' },

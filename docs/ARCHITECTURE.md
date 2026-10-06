@@ -57,8 +57,8 @@ per city, and not the newest ones.
   page 1 while pages hold organic ads it has not seen (between `MIN_PAGES` and `MAX_PAGES`).
   The promoted `platinum`/`booster` slots rotate on every request and are ignored for this.
 - The memory of what was read is in-process on purpose: after a restart the first walk goes
-  deep, which is the catch-up. Only a poll walk that finishes cleanly saves it. `/latest`
-  previews and new-search seeding pass `{ preview: true }` and walk on a copy.
+  deep, which is the catch-up. Only a poll walk that finishes cleanly saves it. New-search
+  seeding passes `{ preview: true }` and walks on a copy.
 - Only `region`, `city` and `page` are sent. Any other parameter makes the gateway's firewall
   answer with a small JSON record (which includes the caller's IP) instead of data.
   `detectBlockPage` recognises it, and no raw Yad2 body is ever logged.

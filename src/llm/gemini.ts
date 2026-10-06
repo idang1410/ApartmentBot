@@ -12,7 +12,7 @@ const MODEL = process.env.GEMINI_MODEL ?? 'gemini-3.5-flash-lite';
 
 /**
  * A healthy extraction takes 3-10 seconds. Waiting 90 for a stalled connection
- * held up a whole /latest, so a call that overruns this is abandoned and
+ * held up a whole /add, so a call that overruns this is abandoned and
  * retried instead.
  */
 const CALL_TIMEOUT_MS = 45_000;

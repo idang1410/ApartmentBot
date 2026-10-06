@@ -3,20 +3,12 @@ import { config } from '../config.js';
 import { describeSearch, nearMissReason } from '../core/filter.js';
 import type { HealthTracker } from '../core/health.js';
 import type { Notifier } from '../core/notifier.js';
-import type { PollCycle } from '../core/pollCycle.js';
+import { FORCED_FACEBOOK_GAP_MINUTES, type PollCycle } from '../core/pollCycle.js';
 import type { Scheduler } from '../core/scheduler.js';
-import type { Listing, SavedSearch } from '../core/types.js';
+import type { Listing } from '../core/types.js';
 import { STATUSES, parseStatusCallback, statusLabel, type TrackStatus } from '../core/tracking.js';
 import { describeSearchScope, escapeHtml, listingKeyboard, searchTitle } from './format.js';
-import {
-  CARDS_PAGE,
-  DIGEST_PAGE,
-  LatestSessions,
-  formatDigest,
-  latestKeyboard,
-  orderSnapshot,
-  type SearchSnapshot,
-} from './latest.js';
+import { CARDS_PAGE } from './digest.js';
 import { REVIEW_DAYS, reviewQueue, type ReviewItem } from './review.js';
 import { KV_KEYS, type KvRepo } from '../db/kv.repo.js';
 import { sqliteNow, type ListingsRepo } from '../db/listings.repo.js';
@@ -44,7 +36,6 @@ export const HELP_TEXT = [
   '/add - הוספת חיפוש חדש (עיר, חדרים, תקציב)',
   'או פשוט כתוב: "3 חדרים במודיעין עד 6500 בלי תיווך"',
   '/list - כל החיפושים השמורים',
-  '/latest - מה יש בשוק כרגע (גם אם כבר נשלח)',
   '/remove - מחיקת חיפוש',
   '/map - מפה של הדירות שהתאימו ב-14 הימים האחרונים',
   '/tracked - דירות שסימנת (/tracked all כולל לא רלוונטיות)',
@@ -52,7 +43,7 @@ export const HELP_TEXT = [
   'תשובה (reply) להתראה נשמרת כהערה, ומספר טלפון בה נשמר לדירה',
   '/pause · /resume - השהיה וחידוש של כל ההתראות',
   '/status - מצב המערכת והמקורות',
-  '/now - הרצת סבב סריקה עכשיו',
+  '/now - סריקה מלאה של כל המקורות עכשיו',
   '/quiet 23:00-07:30 - שעות שקט (/quiet off לביטול)',
   '/invite - קישור הזמנה לחבר (בעלים בלבד)',
   '/help - ההודעה הזו',
@@ -205,157 +196,6 @@ export async function handleQuiet(ctx: Context, deps: CommandDeps, argument: str
     `שעות שקט: ${formatQuietHours(window)}\n` +
       'בזמן הזה אמשיך לסרוק, ואשלח הכל ברגע שהחלון נגמר.',
   );
-}
-
-/**
- * A chat's last /latest results, kept ten minutes so the paging buttons work
- * without sweeping every source again.
- */
-const latestSessions = new LatestSessions(10 * 60_000);
-
-/**
- * Shows what is on the market for each search right now, as a paged digest.
- *
- * When nothing matches it shows the closest listings instead, because "no
- * alerts" is ambiguous - it can mean a quiet market or a search that is too
- * narrow, and only the near-misses tell the two apart.
- */
-export async function handleLatest(ctx: Context, deps: CommandDeps): Promise<void> {
-  const chat = chatOf(ctx);
-  const searches = deps.searches.list(chat);
-  if (searches.length === 0) {
-    await ctx.reply('אין חיפושים שמורים. שלח /add כדי להוסיף אחד.');
-    return;
-  }
-
-  await ctx.reply('בודק מה יש בשוק כרגע…');
-
-  // Each city is fetched once for all of this chat's searches.
-  const snapshots = await deps.cycle.previewAll(searches);
-  const entries: SearchSnapshot[] = searches.map((search) => ({
-    search,
-    ...(snapshots.get(search.id) ?? { matching: [], near: [], all: [] }),
-  }));
-  latestSessions.set(chat, entries);
-
-  // Comparisons ("18% under the going rate") against what is on offer now,
-  // not against whatever the last poll cycle happened to see.
-  deps.notifier.setMarket(entries.flatMap((entry) => entry.all));
-
-  for (const [index, entry] of entries.entries()) {
-    await sendDigestPage(ctx, deps, entry, index, 0);
-  }
-}
-
-/** Handles the paging buttons under a /latest digest: latest:<digest|cards>:<search>:<offset>. */
-export async function handleLatestCallback(ctx: Context, deps: CommandDeps, data: string): Promise<void> {
-  const [, mode, searchIndex, offset] = data.split(':');
-  const entries = latestSessions.get(chatOf(ctx));
-  const entry = entries?.[Number(searchIndex)];
-  if (!entry) {
-    await ctx.reply('התוצאות התיישנו. שלח /latest שוב.');
-    return;
-  }
-  if (mode === 'cards') {
-    await sendCardsPage(ctx, deps, entry, Number(searchIndex), Number(offset) || 0);
-  } else {
-    await sendDigestPage(ctx, deps, entry, Number(searchIndex), Number(offset) || 0);
-  }
-}
-
-async function sendDigestPage(
-  ctx: Context,
-  deps: CommandDeps,
-  entry: SearchSnapshot,
-  searchIndex: number,
-  offset: number,
-): Promise<void> {
-  const chat = chatOf(ctx);
-  const alreadySent = (l: Listing) => deps.listings.wasNotified(l.source, l.sourceId, chat);
-  const { search, matching, near, all } = entry;
-  const ordered = orderSnapshot(entry, alreadySent);
-  const fresh = matching.filter((l) => !alreadySent(l)).length;
-
-  const title = `<b>${searchTitle(search)}</b>\n`;
-
-  if (ordered.length === 0) {
-    // Nothing even close: show what the city has, ordered by how far off the
-    // price is, so "too narrow" and "nothing on the market" look different.
-    const closest = [...all]
-      .filter((l) => l.price !== null)
-      .sort((a, b) => priceDistance(a.price!, search) - priceDistance(b.price!, search))
-      .slice(0, CARDS_PAGE);
-    await ctx.reply(
-      title +
-        `אין כרגע מודעה שתואמת, מתוך ${all.length} מודעות בעיר.` +
-        (closest.length > 0
-          ? `\nהכי קרובות לטווח שלך:\n\n${formatDigest(closest, { offset: 0, pageSize: CARDS_PAGE, alreadySent, nearMiss: () => null })}`
-          : ''),
-      { parse_mode: 'HTML', link_preview_options: { is_disabled: true } },
-    );
-    return;
-  }
-
-  const counts =
-    `${matching.length} מתאימות` +
-    (near.length > 0 ? `, ${near.length} כמעט` : '') +
-    ` · מתוך ${all.length} בעיר` +
-    (fresh > 0 ? `\n${fresh} עוד לא נשלחו אליך (✓ = כבר נשלח)` : '');
-
-  await ctx.reply(
-    `${title}${counts}\n\n` +
-      formatDigest(ordered, {
-        offset,
-        pageSize: DIGEST_PAGE,
-        alreadySent,
-        nearMiss: (l) => (near.includes(l) ? nearMissReason(l, search) : null),
-      }),
-    {
-      parse_mode: 'HTML',
-      link_preview_options: { is_disabled: true },
-      reply_markup: latestKeyboard({ searchIndex, offset, pageSize: DIGEST_PAGE, total: ordered.length }),
-    },
-  );
-}
-
-/** The same page as photo cards, for when a line is not enough to decide. */
-async function sendCardsPage(
-  ctx: Context,
-  deps: CommandDeps,
-  entry: SearchSnapshot,
-  searchIndex: number,
-  offset: number,
-): Promise<void> {
-  const chat = chatOf(ctx);
-  const alreadySent = (l: Listing) => deps.listings.wasNotified(l.source, l.sourceId, chat);
-  const ordered = orderSnapshot(entry, alreadySent);
-
-  for (const listing of ordered.slice(offset, offset + CARDS_PAGE)) {
-    const reason = entry.near.includes(listing) ? nearMissReason(listing, entry.search) : null;
-    const header = reason
-      ? `🤏 <i>כמעט מתאים - ${escapeHtml(reason)}</i>`
-      : alreadySent(listing)
-        ? '<i>כבר נשלח קודם</i>'
-        : '<i>חדש - עוד לא נשלח</i>';
-    await deps.notifier.sendPreview(listing, chat, header);
-  }
-
-  const next = offset + CARDS_PAGE;
-  if (next < ordered.length) {
-    await ctx.reply(`…ועוד ${ordered.length - next}.`, {
-      reply_markup: new InlineKeyboard().text('🖼 עוד כרטיסים', `latest:cards:${searchIndex}:${next}`),
-    });
-  }
-}
-
-/** How far a price sits outside the search bounds; 0 when inside. */
-function priceDistance(
-  price: number,
-  search: Pick<SavedSearch, 'minPrice' | 'maxPrice'>,
-): number {
-  if (search.maxPrice !== null && price > search.maxPrice) return price - search.maxPrice;
-  if (search.minPrice !== null && price < search.minPrice) return search.minPrice - price;
-  return 0;
 }
 
 /** One alert card to send again, with the line shown above it. */
@@ -557,9 +397,25 @@ export async function handleNow(ctx: Context, deps: CommandDeps): Promise<void> 
     await ctx.reply('כבר רץ סבב כרגע.');
     return;
   }
-  await ctx.reply('מריץ סבב סריקה…');
-  await deps.scheduler.runNow();
-  await ctx.reply('הסבב הסתיים. /status לפרטים.');
+  const skipped = deps.cycle.forcedSkips();
+  await ctx.reply(
+    skipped.length === 0
+      ? 'סורק את כל המקורות, כולל פייסבוק - זה לוקח בערך 15 דקות'
+      : `סורק את כל המקורות חוץ מ-${skipped.join(', ')} ` +
+          `(רץ לפני פחות מ-${FORCED_FACEBOOK_GAP_MINUTES} דקות) - זה לוקח כמה דקות`,
+  );
+  const result = await deps.scheduler.runNow({ force: true });
+  if (!result) {
+    await ctx.reply('הסריקה לא הושלמה. /status לפרטים.');
+    return;
+  }
+  const lines = Object.entries(result.bySource).map(
+    ([source, counts]) =>
+      `${source}: ${counts.listings} מודעות` + (counts.failures > 0 ? ` · ${counts.failures} כשלונות` : ''),
+  );
+  await ctx.reply(
+    ['הסריקה הסתיימה.', ...lines, '', `מודעות חדשות: ${result.newListings} · התראות שנשלחו: ${result.notificationsSent}`].join('\n'),
+  );
 }
 
 export function ownerHint(): string {
