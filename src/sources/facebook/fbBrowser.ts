@@ -119,7 +119,7 @@ export async function readGroupPosts(
       await sleep(idle > 0 ? randomBetween(3_500, 6_000) : randomBetween(1_500, 3_000));
     }
 
-    logger.debug({ groupSlug, posts: posts.length }, 'read facebook group');
+    logger.info({ groupSlug, posts: posts.length }, 'read facebook group');
     return posts;
   } finally {
     await page.close();

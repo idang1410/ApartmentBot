@@ -129,6 +129,15 @@ describe('area filtering', () => {
     expect(withinAreas(listing({ neighborhood: 'משואה (גבעת C)' }), s)).toBe(true);
   });
 
+  it('does not take a place that only names the city as the area', () => {
+    const s = search({ cityKeys: ['tel-aviv'], areas: { 'tel-aviv': ['צפון יפו'] } });
+    const jaffa = (neighborhood: string) => listing({ city: 'תל אביב יפו', neighborhood });
+    expect(withinAreas(jaffa('יפו'), s)).toBe(false);
+    expect(withinAreas(jaffa('תל אביב-יפו'), s)).toBe(false);
+    expect(withinAreas(jaffa('צפון יפו, המושבה האמריקאית-גרמנית'), s)).toBe(true);
+    expect(withinAreas(jaffa('שוק הפשפשים'), s)).toBe(true);
+  });
+
   it('hides listings that publish no street or neighbourhood at all', () => {
     // The chosen behaviour: asking for two streets should not deliver ads
     // with no address. About 6% of listings are affected.

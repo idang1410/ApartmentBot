@@ -127,8 +127,10 @@ export function withinAreas(listing: Listing, search: SavedSearch): boolean {
   const wanted = cityKey ? areas[cityKey] : undefined;
   if (!wanted || wanted.length === 0) return true;
 
+  // A place that only names the city ("יפו") says nothing about the area.
+  const city = findCityByKey(cityKey!)!;
   const candidates = [listing.neighborhood, listing.address]
-    .filter((value): value is string => Boolean(value))
+    .filter((value): value is string => Boolean(value) && !listingCityMatches(city, value!))
     .map(normalizePlace);
   if (candidates.length === 0) return false;
 

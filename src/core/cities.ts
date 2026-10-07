@@ -281,6 +281,9 @@ export const REGION_ALIASES: Record<string, Record<string, string[]>> = {
       'נחלת יהודה',
     ],
   },
+  'tel-aviv': {
+    'צפון יפו': ['צפון יפו', 'המושבה האמריקאית', 'שוק הפשפשים'],
+  },
 };
 
 /** The neighbourhoods an area name stands for; a plain street or neighbourhood is itself. */
