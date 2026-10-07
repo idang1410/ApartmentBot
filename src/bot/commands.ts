@@ -6,7 +6,7 @@ import type { HealthTracker } from '../core/health.js';
 import type { Notifier } from '../core/notifier.js';
 import { FORCED_FACEBOOK_GAP_MINUTES, type PollCycle } from '../core/pollCycle.js';
 import type { Scheduler } from '../core/scheduler.js';
-import type { Listing } from '../core/types.js';
+import { sameFlat, type Listing } from '../core/types.js';
 import { classifyLink, readLink, type LinkTarget } from '../sources/linkReader.js';
 import { STATUSES, parseStatusCallback, statusLabel, type TrackStatus } from '../core/tracking.js';
 import { describeSearchScope, escapeHtml, listingKeyboard, searchTitle } from './format.js';
@@ -334,7 +334,12 @@ export async function handleStatusCallback(ctx: Context, deps: CommandDeps, data
     await ctx.answerCallbackQuery({ text: 'הדירה לא נמצאה.' }).catch(() => undefined);
     return;
   }
-  deps.listings.setStatus(parsed.id, chatOf(ctx), parsed.status);
+  // A status belongs to the flat, so it goes on every tracked copy of it.
+  for (const copy of deps.listings.listTracked(chatOf(ctx), true)) {
+    if (copy.id === parsed.id || sameFlat(copy.listing, tracked.listing) === 'same') {
+      deps.listings.setStatus(copy.id, chatOf(ctx), parsed.status);
+    }
+  }
   await ctx.answerCallbackQuery({ text: `סומן: ${statusLabel(parsed.status)}` }).catch(() => undefined);
   await ctx
     .editMessageReplyMarkup({ reply_markup: listingKeyboard(tracked.listing, parsed) })
@@ -377,20 +382,36 @@ export async function handleTracked(ctx: Context, deps: CommandDeps, argument: s
     const index = STATUSES.findIndex((st) => st.code === status);
     return index === -1 ? STATUSES.length : index;
   };
-  const cards = [...tracked]
-    .sort((a, b) => order(a.status) - order(b.status))
-    .map(({ listing, status, phone, notes }) => {
-      const contact = phone ?? listing.phone;
-      const note = notes.at(-1)?.text;
-      const header = [
-        `<b>${status ? statusLabel(status) : '📝 עם הערות'}</b>`,
-        contact ? `📞 ${escapeHtml(contact)}` : null,
-        note ? `📝 ${escapeHtml(note.length > 120 ? `${note.slice(0, 119)}…` : note)}` : null,
-      ]
-        .filter(Boolean)
-        .join('\n');
-      return { listing, header };
-    });
+  const sorted = [...tracked].sort((a, b) => order(a.status) - order(b.status));
+  // Copies of one flat share a card: the first copy's, with every copy's own phone and note.
+  const groups: Array<typeof sorted> = [];
+  for (const item of sorted) {
+    const group = groups.find((g) => g.some((other) => sameFlat(other.listing, item.listing) === 'same'));
+    if (group) group.push(item);
+    else groups.push([item]);
+  }
+  const contactLines = ({ listing, phone, notes }: (typeof sorted)[number]) => {
+    const contact = phone ?? listing.phone;
+    const note = notes.at(-1)?.text;
+    return [
+      contact ? `📞 ${escapeHtml(contact)}` : null,
+      note ? `📝 ${escapeHtml(note.length > 120 ? `${note.slice(0, 119)}…` : note)}` : null,
+    ].filter(Boolean);
+  };
+  const cards = groups.map(([first, ...copies]) => {
+    const { listing, status } = first!;
+    const header = [
+      `<b>${status ? statusLabel(status) : '📝 עם הערות'}</b>`,
+      ...contactLines(first!),
+      ...copies.flatMap((copy) => {
+        const lines = contactLines(copy);
+        const price = copy.listing.price === null ? '' : ` ${copy.listing.price.toLocaleString('en-US')} ₪`;
+        const link = `<a href="${escapeHtml(copy.listing.url)}">עותק${price}</a>`;
+        return lines.length > 0 ? [`${link}: ${lines.join(' ')}`] : [];
+      }),
+    ].join('\n');
+    return { listing, header };
+  });
   cardSessions.set(`tracked:${chatOf(ctx)}`, cards);
   await sendCardList(ctx, deps, 'tracked', cards, 0);
 }
