@@ -521,6 +521,17 @@ export class ListingsRepo {
     return [...copies.values()];
   }
 
+  /** A listing this chat tracks, by its source id. */
+  findTracked(source: string, sourceId: string, chatId: number): Listing | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT payload FROM tracked_listings
+          WHERE chat_id = ? AND json_extract(payload, '$.source') = ? AND json_extract(payload, '$.sourceId') = ?`,
+      )
+      .get(chatId, source, sourceId) as { payload: string } | undefined;
+    return row ? reviveListing(row.payload) : undefined;
+  }
+
   /** A listing this chat has recorded, by its source id. */
   findSeen(source: string, sourceId: string, chatId: number): Listing | undefined {
     const row = this.db

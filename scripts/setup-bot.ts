@@ -14,6 +14,7 @@ await bot.api.setMyCommands([
   { command: 'list', description: 'החיפושים השמורים שלי' },
   { command: 'map', description: 'מפת הדירות שהתאימו' },
   { command: 'tracked', description: 'דירות שסימנתי' },
+  { command: 'track', description: 'מעקב אחרי מודעה לפי קישור' },
   { command: 'review', description: 'מעבר על דירות שהתאימו לסימון' },
   { command: 'status', description: 'מצב המערכת והמקורות' },
   { command: 'now', description: 'סריקה מלאה עכשיו' },

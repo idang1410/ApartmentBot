@@ -59,15 +59,16 @@ export class LoggedOutError extends Error {
 /**
  * Reads the most recent posts from one group.
  *
- * Deliberately slow: it opens the group sorted by newest, waits, scrolls a
- * couple of screens with pauses, and stops. That is roughly what a person
- * checking a group looks like, and it is the main defence against the account
- * being flagged.
+ * Deliberately slow: it opens the group sorted by newest, waits, and scrolls
+ * with pauses until it has maxPosts or the feed stops growing. That is roughly
+ * what a person checking a group looks like, and it is the main defence
+ * against the account being flagged.
  */
 export async function readGroupPosts(
   context: BrowserContext,
   groupSlug: string,
   maxPosts: number,
+  isKnown: (postId: string) => boolean = () => false,
 ): Promise<RawPost[]> {
   const page = await context.newPage();
   try {
@@ -81,8 +82,16 @@ export async function readGroupPosts(
     if (await isLoggedOut(page)) throw new LoggedOutError();
 
     const posts: RawPost[] = [];
-    // A few gentle scrolls are enough for a 15-30 minute polling window.
-    for (let round = 0; round < 4 && posts.length < maxPosts; round++) {
+    // The feed is newest first, so a run of posts read before means the rest are old too.
+    // A single known post is not enough: pinned posts sit on top whatever their age.
+    let knownInRow = 0;
+    const caughtUp = () => knownInRow >= KNOWN_IN_ROW_TO_STOP;
+    // Stops after two scrolls that bring no new posts, or at MAX_SCROLLS.
+    for (
+      let round = 0, idle = 0;
+      round < MAX_SCROLLS && idle < 2 && posts.length < maxPosts && !caughtUp();
+      round++
+    ) {
       // Tagged up front: a locator by position would shift as posts are read.
       const tags = await page.evaluate(
         ([selector, round]) =>
@@ -92,14 +101,20 @@ export async function readGroupPosts(
           }),
         [UNREAD_POST, round] as const,
       );
+      idle = tags.length === 0 ? idle + 1 : 0;
       for (const tag of tags) {
-        if (posts.length >= maxPosts) break;
+        if (posts.length >= maxPosts || caughtUp()) break;
         // A post Facebook unloads while it is being read is skipped.
         const post = await readPostUnit(page.locator(`[data-apt-read="${tag}"]`), groupSlug).catch(() => null);
-        if (post && !posts.some((p) => p.postId === post.postId)) posts.push(post);
+        if (!post) continue;
+        knownInRow = isKnown(post.postId) ? knownInRow + 1 : 0;
+        if (!posts.some((p) => p.postId === post.postId)) posts.push(post);
       }
+      // The feed loads more only near its end, so scroll past the last post loaded.
+      await page.locator('div[role="feed"] > div').last().scrollIntoViewIfNeeded().catch(() => undefined);
       await page.mouse.wheel(0, randomBetween(600, 1_100));
-      await sleep(randomBetween(1_500, 3_000));
+      // A round that found nothing new waits longer, for the feed to load more.
+      await sleep(idle > 0 ? randomBetween(3_500, 6_000) : randomBetween(1_500, 3_000));
     }
 
     logger.debug({ groupSlug, posts: posts.length }, 'read facebook group');
@@ -108,6 +123,12 @@ export async function readGroupPosts(
     await page.close();
   }
 }
+
+/** Posts read before, one after another, that end a group visit. */
+const KNOWN_IN_ROW_TO_STOP = 3;
+
+/** Scrolls per group visit, however many posts it has brought. */
+const MAX_SCROLLS = 25;
 
 /** A feed post not yet read; read ones are tagged so a later scroll skips them. */
 const UNREAD_POST = 'div[role="feed"] > div:not([data-apt-read]):has([data-ad-rendering-role="story_message"])';
@@ -120,13 +141,7 @@ const UNREAD_POST = 'div[role="feed"] > div:not([data-apt-read]):has([data-ad-re
  * by hand before the text and links are read.
  */
 async function readPostUnit(unit: Locator, groupSlug: string): Promise<RawPost | null> {
-  const seeMore = unit
-    .locator('[data-ad-rendering-role="story_message"] [role="button"]')
-    .filter({ hasText: /^(See more|ראה עוד|עוד)$/ });
-  if ((await seeMore.count()) > 0) {
-    await seeMore.first().click({ timeout: 3_000 }).catch(() => undefined);
-    await sleep(randomBetween(400, 900));
-  }
+  await expandSeeMore(unit);
   // The timestamp is the header's first link that is not a profile.
   await unit.locator('a[href^="?"], a[href="#"]').first().hover({ timeout: 3_000 }).catch(() => undefined);
   await sleep(randomBetween(300, 800));
@@ -142,6 +157,41 @@ async function readPostUnit(unit: Locator, groupSlug: string): Promise<RawPost |
 
   const postedLabel = /(\d+\s+ב[א-ת]+|לפני\s+\S+|שעה|אתמול)/.exec(flat)?.[0];
   return { ...link, groupSlug, text: flat.slice(0, 2_000), ...(postedLabel ? { postedLabel } : {}) };
+}
+
+const STORY_MESSAGE = '[data-ad-rendering-role="story_message"]';
+
+/** Clicks the "See more" that cuts a long post short, if there is one. */
+async function expandSeeMore(scope: Locator): Promise<void> {
+  const seeMore = scope
+    .locator(`${STORY_MESSAGE} [role="button"]`)
+    .filter({ hasText: /^(See more|ראה עוד|עוד)$/ });
+  if ((await seeMore.count()) > 0) {
+    await seeMore.first().click({ timeout: 3_000 }).catch(() => undefined);
+    await sleep(randomBetween(400, 900));
+  }
+}
+
+/**
+ * Opens one group post and returns its text on one line. The post is the
+ * first story message in the post dialog, or on the page when there is no
+ * dialog; comments carry none.
+ */
+export async function readPost(context: BrowserContext, url: string): Promise<string> {
+  const page = await context.newPage();
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+    await sleep(randomBetween(3_000, 5_000));
+
+    if (await isLoggedOut(page)) throw new LoggedOutError();
+
+    const dialog = page.locator('div[role="dialog"]').filter({ has: page.locator(STORY_MESSAGE) });
+    const scope = (await dialog.count()) > 0 ? dialog.first() : page.locator('body');
+    await expandSeeMore(scope);
+    return postText(await scope.locator(STORY_MESSAGE).first().innerText({ timeout: 10_000 }));
+  } finally {
+    await page.close();
+  }
 }
 
 /** A post's visible text on one line, without the runs of "Facebook" the page hides among it. */

@@ -20,7 +20,7 @@ import { LoggedOutError, openContext, readGroupPosts, USER_DATA_DIR, type RawPos
 import { groupsForCity, groupsToRead } from './fbGroups.js';
 
 const SOURCE = 'facebook';
-const POSTS_PER_GROUP = 15;
+const POSTS_PER_GROUP = 30;
 /** Posts the model has already judged are not sent again for a day. */
 const PARSED_TTL_MS = 24 * 60 * 60 * 1000;
 export const LOGIN_INSTRUCTION = 'npm run fb-login';
@@ -58,7 +58,10 @@ export function createFacebookAdapter(stored: StoredListings): SourceAdapter {
       const groups = groupsToRead(city);
       if (groups.length === 0) return [];
 
-      const posts = await readGroups(groups);
+      const posts = await readGroups(
+        groups,
+        (id) => stored.find(SOURCE, id) !== undefined || judged.has(SOURCE, id),
+      );
 
       const listings: Listing[] = [];
       const unjudged: RawPost[] = [];
@@ -103,14 +106,14 @@ export function isOffline(error: unknown): boolean {
   );
 }
 
-async function readGroups(groups: string[]): Promise<RawPost[]> {
+async function readGroups(groups: string[], isKnown: (postId: string) => boolean): Promise<RawPost[]> {
   const context = await openContext(true);
   const posts: RawPost[] = [];
 
   try {
     for (const group of groups) {
       try {
-        posts.push(...(await readGroupPosts(context, group, POSTS_PER_GROUP)));
+        posts.push(...(await readGroupPosts(context, group, POSTS_PER_GROUP, isKnown)));
       } catch (error) {
         // An expired login fails every group the same way. Stop at the first
         // and say so - knocking on each door and reporting nothing is what

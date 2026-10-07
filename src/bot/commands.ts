@@ -7,6 +7,7 @@ import type { Notifier } from '../core/notifier.js';
 import { FORCED_FACEBOOK_GAP_MINUTES, type PollCycle } from '../core/pollCycle.js';
 import type { Scheduler } from '../core/scheduler.js';
 import type { Listing } from '../core/types.js';
+import { classifyLink, readLink, type LinkTarget } from '../sources/linkReader.js';
 import { STATUSES, parseStatusCallback, statusLabel, type TrackStatus } from '../core/tracking.js';
 import { describeSearchScope, escapeHtml, listingKeyboard, searchTitle } from './format.js';
 import { CARDS_PAGE } from './digest.js';
@@ -40,6 +41,7 @@ export const HELP_TEXT = [
   '/remove - מחיקת חיפוש',
   '/map - מפה של הדירות שהתאימו ב-14 הימים האחרונים',
   '/tracked - דירות שסימנת (/tracked all כולל לא רלוונטיות)',
+  '/track &lt;קישור&gt; - מעקב אחרי מודעה מכל אתר (או פשוט שלח את הקישור)',
   '/review - מעבר על הדירות שהתאימו ב-30 הימים האחרונים לסימון (/review new רק מה שלא סימנת)',
   'תשובה (reply) להתראה נשמרת כהערה, ומספר טלפון בה נשמר לדירה',
   '/pause · /resume - השהיה וחידוש של כל ההתראות',
@@ -423,6 +425,44 @@ async function reportScan(ctx: Context, deps: CommandDeps): Promise<void> {
   await ctx.reply(
     ['הסריקה הסתיימה.', ...lines, '', `מודעות חדשות: ${result.newListings} · התראות שנשלחו: ${result.notificationsSent}`].join('\n'),
   );
+}
+
+/** Tracks the listing a link points to and shows its card, reading the page only when it is new. */
+export async function handleTrackLink(ctx: Context, deps: CommandDeps, link: string): Promise<void> {
+  const target = classifyLink(link.trim());
+  if (!target) {
+    await ctx.reply('שלח קישור למודעה, למשל: /track https://www.yad2.co.il/realestate/item/abc123');
+    return;
+  }
+  const chat = chatOf(ctx);
+  const known =
+    deps.listings.findTracked(target.source, target.sourceId, chat) ??
+    deps.listings.findStored(target.source, target.sourceId);
+  if (known) {
+    await showTracked(deps, known, chat);
+    return;
+  }
+  await ctx.reply('קורא את המודעה…');
+  // Not awaited, like /now: a Facebook page waits for the shared profile, which a scan may hold for minutes.
+  void reportLink(deps, target, chat).catch((error) => logger.error({ err: error }, 'link tracking failed'));
+}
+
+async function reportLink(deps: CommandDeps, target: LinkTarget, chat: number): Promise<void> {
+  const { listing, rental } = await readLink(target, deps.searches.list(chat)[0]?.cityName ?? '');
+  const header =
+    rental === null
+      ? '⚠️ לא הצלחתי לקרוא את המודעה - שמרתי את הקישור למעקב'
+      : rental
+        ? undefined
+        : '⚠️ לפי הניתוח זו לא מודעה להשכרה - שמרתי בכל זאת';
+  await showTracked(deps, listing, chat, header);
+}
+
+/** Tracks a listing, marked interested unless it already has a status, and sends its card. */
+async function showTracked(deps: CommandDeps, listing: Listing, chat: number, header?: string): Promise<void> {
+  const id = deps.listings.track(listing, chat);
+  if (!deps.listings.tracked(id, chat)?.status) deps.listings.setStatus(id, chat, 'interested');
+  await deps.notifier.sendPreview(listing, chat, header);
 }
 
 export function ownerHint(): string {

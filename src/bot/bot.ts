@@ -12,6 +12,7 @@ import type { UsersRepo } from '../db/users.repo.js';
 import { isGeminiConfigured } from '../llm/gemini.js';
 import { looksLikeSearchRequest, parseSearchRequest } from '../llm/parseSearchRequest.js';
 import { logger } from '../logger.js';
+import { messageLink } from '../sources/linkReader.js';
 import { AddWizard } from './addWizard.js';
 import {
   HELP_TEXT,
@@ -28,6 +29,7 @@ import {
   handleCardsCallback,
   handleStatus,
   handleStatusCallback,
+  handleTrackLink,
   handleTracked,
   handleTrackedReply,
   ownerHint,
@@ -90,6 +92,7 @@ export function registerHandlers(bot: Bot, deps: BotDeps): void {
   bot.command('invite', (ctx) => handleInvite(ctx, commandDeps));
   bot.command('users', (ctx) => handleUsers(ctx, commandDeps));
   bot.command('tracked', (ctx) => handleTracked(ctx, commandDeps, ctx.match ?? ''));
+  bot.command('track', (ctx) => handleTrackLink(ctx, commandDeps, ctx.match ?? ''));
   bot.command('review', (ctx) => handleReview(ctx, commandDeps, ctx.match ?? ''));
 
   bot.command('cancel', async (ctx) => {
@@ -123,6 +126,13 @@ export function registerHandlers(bot: Bot, deps: BotDeps): void {
 
     // A reply to an alert is a note on that flat, whatever else is in progress.
     if (await handleTrackedReply(ctx, commandDeps)) return;
+
+    // A message that is only a link is a flat to track.
+    const link = messageLink(text);
+    if (link) {
+      await handleTrackLink(ctx, commandDeps, link);
+      return;
+    }
 
     if (wizard.isActive(ctx.chat.id)) {
       await wizard.handleText(ctx, text);
