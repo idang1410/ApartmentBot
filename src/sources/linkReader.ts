@@ -6,6 +6,8 @@ import { fetchText } from '../util/http.js';
 import { hasLoginProfile, toListing } from './facebook/fbAdapter.js';
 import { openContext, postLink, readMarketplaceItem, readPost } from './facebook/fbBrowser.js';
 import { itemDetailsText } from './facebook/fbMarketplace.js';
+import { fetchItem } from './yad2/yad2Adapter.js';
+import { parseYad2ItemBody } from './yad2/yad2Normalize.js';
 
 /** A listing link the owner sent, with the source and id it is stored under. */
 export interface LinkTarget {
@@ -79,9 +81,19 @@ export function classifyLink(raw: string): LinkTarget | null {
  * Reads a linked listing and turns it into a Listing through the same model
  * extraction as group posts. A page the model judges is not a rental offer is
  * kept as parsed; a page that cannot be read or parsed becomes a bare listing
- * of the link, so it can still be tracked.
+ * of the link, so it can still be tracked. A Yad2 ad is read from the gateway,
+ * with no model.
  */
 export async function readLink(target: LinkTarget, cityHint: string): Promise<LinkedListing> {
+  if (target.source === 'yad2') {
+    try {
+      const item = parseYad2ItemBody(await fetchItem(target.sourceId), cityHint);
+      if (item) return item;
+    } catch (error) {
+      logger.warn({ err: error, source: target.source }, 'link read failed');
+    }
+    return { listing: bareListing(target, cityHint), rental: null };
+  }
   let text = '';
   try {
     text = await linkText(target);

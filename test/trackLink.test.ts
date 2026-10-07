@@ -1,10 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Bot } from 'grammy';
 import type { Update } from 'grammy/types';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerHandlers, type BotDeps } from '../src/bot/bot.js';
 import type { Notifier } from '../src/core/notifier.js';
 import { statusCallback } from '../src/core/tracking.js';
-import type { Listing } from '../src/core/types.js';
+import { BlockedError, type Listing } from '../src/core/types.js';
 import { openDatabase, type Db } from '../src/db/database.js';
 import { KvRepo } from '../src/db/kv.repo.js';
 import { ListingsRepo } from '../src/db/listings.repo.js';
@@ -91,8 +93,12 @@ const parsed: ParsedPost = {
 
 describe('reading a link', () => {
   const target = classifyLink('https://www.yad2.co.il/realestate/item/abc123')!;
+  const page = classifyLink('https://www.madlan.co.il/listings/abc123')!;
 
-  beforeEach(() => vi.mocked(extractPosts).mockReset());
+  beforeEach(() => {
+    vi.mocked(extractPosts).mockReset();
+    vi.mocked(fetchText).mockReset();
+  });
 
   it('keeps only the link when the page cannot be read', async () => {
     vi.mocked(fetchText).mockRejectedValueOnce(new Error('HTTP 403'));
@@ -111,18 +117,38 @@ describe('reading a link', () => {
     });
   });
 
+  it('reads a Yad2 ad from the gateway, with no model', async () => {
+    vi.mocked(fetchText).mockResolvedValueOnce(
+      readFileSync(join(import.meta.dirname, 'fixtures', 'yad2-item-tel-aviv.json'), 'utf8'),
+    );
+    const { listing, rental } = await readLink(target, '');
+    expect(fetchText).toHaveBeenCalledWith(
+      'https://gw.yad2.co.il/realestate-item/abc123',
+      expect.objectContaining({ headers: expect.objectContaining({ Origin: 'https://www.yad2.co.il' }) }),
+    );
+    expect(extractPosts).not.toHaveBeenCalled();
+    expect(rental).toBe(true);
+    expect(listing).toMatchObject({ source: 'yad2', price: 10_000, rooms: 3 });
+  });
+
+  it('keeps only the link when the gateway answers a challenge', async () => {
+    vi.mocked(fetchText).mockRejectedValueOnce(new BlockedError('yad2', 'Radware challenge'));
+    expect(await readLink(target, '')).toEqual({ listing: bareListing(target, ''), rental: null });
+    expect(fetchText).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps only the link when the model gives no answer', async () => {
     vi.mocked(fetchText).mockResolvedValueOnce('<html><body>דירה</body></html>');
     vi.mocked(extractPosts).mockResolvedValueOnce(new Map());
-    expect((await readLink(target, '')).listing.price).toBeNull();
+    expect((await readLink(page, '')).listing.price).toBeNull();
   });
 
   it('keeps what was parsed from a page the model says is not a rental', async () => {
     vi.mocked(fetchText).mockResolvedValueOnce('<html><body>דירה למכירה</body></html>');
     vi.mocked(extractPosts).mockResolvedValueOnce(new Map([['abc123', parsed]]));
-    const { listing, rental } = await readLink(target, 'תל אביב יפו');
+    const { listing, rental } = await readLink(page, 'תל אביב יפו');
     expect(rental).toBe(false);
-    expect(listing).toMatchObject({ source: 'yad2', price: 6_500, rooms: 3, city: 'חיפה', address: 'הרצל 5' });
+    expect(listing).toMatchObject({ source: 'madlan', price: 6_500, rooms: 3, city: 'חיפה', address: 'הרצל 5' });
   });
 });
 

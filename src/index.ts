@@ -23,7 +23,11 @@ const kv = new KvRepo(db);
 const health = new HealthTracker();
 
 // Sources that read free text ask the store before spending a model call.
-const adapters = buildAdapters({ find: (source, id) => listings.findStored(source, id) });
+const adapters = buildAdapters(
+  { find: (source, id) => listings.findStored(source, id) },
+  config.enabledSources,
+  kv,
+);
 
 // The bot exists before its handlers so the notifier can hold its api while
 // the handlers hold the cycle that the notifier feeds.

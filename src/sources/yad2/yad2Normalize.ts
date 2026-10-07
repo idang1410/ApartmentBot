@@ -27,6 +27,7 @@ const markerSchema = z.object({
     .object({
       coverImage: z.string().nullish(),
       images: z.array(z.string()).nullish(),
+      description: z.string().nullish(),
     })
     .nullish(),
   tags: z.array(z.object({ name: z.string().nullish() }).passthrough()).nullish(),
@@ -42,6 +43,27 @@ const itemSchema = markerSchema.extend({
 });
 
 type Yad2Item = z.infer<typeof itemSchema>;
+
+/** One ad's own page: the feed ad plus what it says about the flat itself. */
+const itemPageSchema = z.object({
+  data: itemSchema.extend({
+    subcategoryId: z.number().nullish(),
+    inProperty: z.record(z.string(), z.unknown()).nullish(),
+  }),
+});
+
+/** Yad2's in-flat flags, as the labels the filter matches. */
+const IN_PROPERTY_LABELS: Record<string, string> = {
+  includeParking: 'חניה',
+  includeElevator: 'מעלית',
+  includeBalcony: 'מרפסת',
+  includeSecurityRoom: 'ממ״ד',
+  includeWarehouse: 'מחסן',
+  includeAirconditioner: 'מיזוג',
+  includeFurniture: 'מרוהטת',
+  isPetsAllowed: 'חיות מחמד',
+  includeBuildingShelter: 'מקלט',
+};
 
 /**
  * Feed sections that hold rental ads. The rest are paid placements: `yad1` is new projects
@@ -151,6 +173,32 @@ function parseJsonBody(body: string): unknown {
 /** Parses one feed page's raw body; see parseJsonBody for the non-JSON case. */
 export function parseYad2FeedBody(body: string, fallbackCity: string): Yad2FeedPage {
   return parseYad2Feed(parseJsonBody(body), fallbackCity);
+}
+
+/**
+ * Parses one ad's page from the gateway; null for a non-home. `rental` is false for an ad
+ * outside subcategory 2, which is Yad2's rentals.
+ */
+export function parseYad2ItemBody(body: string, fallbackCity: string): { listing: Listing; rental: boolean } | null {
+  const page = itemPageSchema.safeParse(parseJsonBody(body));
+  if (!page.success) throw new Error('yad2 item has no ad - the response shape changed');
+  const item = page.data.data;
+  const listing = toListing(item, fallbackCity, brokerFromAdType(item.adType));
+  if (!listing) return null;
+
+  const flags = item.inProperty ?? {};
+  const amenities = Object.keys(IN_PROPERTY_LABELS)
+    .filter((key) => flags[key] === true)
+    .map((key) => IN_PROPERTY_LABELS[key]!);
+  const description = item.metaData?.description?.trim();
+  return {
+    listing: {
+      ...listing,
+      amenities: [...new Set([...amenities, ...listing.amenities])],
+      ...(description ? { description } : {}),
+    },
+    rental: !item.subcategoryId || item.subcategoryId === 2,
+  };
 }
 
 export function parseYad2Feed(payload: unknown, fallbackCity: string): Yad2FeedPage {

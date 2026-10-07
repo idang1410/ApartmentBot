@@ -96,6 +96,18 @@ describe('sequence baseline in the poll cycle', () => {
     expect(pendingIds()).toEqual(['bumped', 'fresh']);
   });
 
+  it('alerts once on an old unseen ad that a later cycle reads deep in the feed', async () => {
+    current = [ad('a', 100), ad('b', 90)];
+    await cycle.run();
+    current = [ad('a', 100), ad('deep', 40)];
+    await cycle.run();
+    expect(pendingIds()).toEqual(['deep']);
+
+    await cycle.run();
+    expect(pendingIds()).toEqual(['deep']);
+    expect(listings.selectUnseen([ad('deep', 40)], CHAT)).toEqual([]);
+  });
+
   it('never moves the baseline after the first fetch', async () => {
     // An ad created after it that does not match today and gets cheaper next week must
     // still alert then; a baseline that followed the newest ad would swallow it.

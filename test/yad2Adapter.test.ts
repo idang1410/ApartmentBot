@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { findCityByKey } from '../src/core/cities.js';
 import { BlockedError, type CityEntry, type SavedSearch } from '../src/core/types.js';
 import {
+  DEEP_CURSOR_PREFIX,
+  DEEP_PAGES_PER_CYCLE,
   MAX_PAGES,
   MIN_PAGES,
   feedUrl,
@@ -186,6 +188,95 @@ describe('yad2 page walking', () => {
   it('skips a city it has no codes for', () => {
     expect(createYad2Adapter().supports(search, { key: 'nowhere', name: 'x', aliases: [] })).toBe(false);
     expect(createYad2Adapter().supports(search, telAviv)).toBe(true);
+  });
+});
+
+describe('the yad2 deep walk', () => {
+  const memoryKv = () => {
+    const store = new Map<string, string>();
+    return { store, get: (k: string) => store.get(k), set: (k: string, v: string) => void store.set(k, v) };
+  };
+  const cursor = `${DEEP_CURSOR_PREFIX}tel-aviv`;
+
+  /** An adapter that has already read the top once, so each cycle reads MIN_PAGES at the top. */
+  async function warmed(bodyFor: (page: number) => string, kv = memoryKv()) {
+    const rec = recording(bodyFor);
+    const adapter = createYad2Adapter(rec.fetchPage, kv);
+    await adapter.fetchListings(search, telAviv);
+    rec.calls.length = 0;
+    return { ...rec, adapter, kv };
+  }
+
+  it('reads past the top on a restart, then advances by two pages a cycle', async () => {
+    const { calls, adapter, kv } = await warmed((n) => page(tokensFor('x', n)));
+    expect(kv.store.get(cursor)).toBe(String(MAX_PAGES + DEEP_PAGES_PER_CYCLE + 1));
+
+    const listings = await adapter.fetchListings(search, telAviv);
+    expect(calls).toEqual([1, 2, 13, 14]);
+    expect(listings.map((l) => l.sourceId)).toEqual(expect.arrayContaining(['x13a', 'x14b']));
+    expect(kv.store.get(cursor)).toBe('15');
+  });
+
+  it('wraps to the page after the top at the end of the feed', async () => {
+    const kv = memoryKv();
+    const { calls, adapter } = await warmed((n) => page(tokensFor('x', n), 20), kv);
+    kv.set(cursor, '20');
+
+    await adapter.fetchListings(search, telAviv);
+    expect(calls).toEqual([1, 2, 20, 3]);
+    expect(kv.store.get(cursor)).toBe('4');
+  });
+
+  it('wraps after an empty page', async () => {
+    const kv = memoryKv();
+    const { calls, adapter } = await warmed((n) => page(n >= 15 ? [] : tokensFor('x', n)), kv);
+    kv.set(cursor, '15');
+
+    await adapter.fetchListings(search, telAviv);
+    expect(calls).toEqual([1, 2, 15, 3]);
+  });
+
+  it('keeps its place across a restart', async () => {
+    const kv = memoryKv();
+    kv.set(cursor, '50');
+    const { calls, fetchPage } = recording((n) => page(tokensFor('x', n)));
+    await createYad2Adapter(fetchPage, kv).fetchListings(search, telAviv);
+    expect(calls).toEqual([...pages(MAX_PAGES), 50, 51]);
+  });
+
+  it('stops on a block, throws it for the backoff, and keeps the cursor', async () => {
+    const kv = memoryKv();
+    const { calls, adapter } = await warmed((n) => {
+      if (n === 30) throw new BlockedError('yad2', 'Radware firewall event');
+      return page(tokensFor('x', n));
+    }, kv);
+    kv.set(cursor, '30');
+
+    await expect(adapter.fetchListings(search, telAviv)).rejects.toBeInstanceOf(BlockedError);
+    expect(calls).toEqual([1, 2, 30]);
+    expect(kv.store.get(cursor)).toBe('30');
+  });
+
+  it('stops on a failed page and keeps what it read', async () => {
+    const kv = memoryKv();
+    const { calls, adapter } = await warmed((n) => {
+      if (n === 31) throw new Error('socket hang up');
+      return page(tokensFor('x', n));
+    }, kv);
+    kv.set(cursor, '30');
+
+    const listings = await adapter.fetchListings(search, telAviv);
+    expect(calls).toEqual([1, 2, 30, 31]);
+    expect(listings.map((l) => l.sourceId)).toEqual(expect.arrayContaining(['x30a']));
+    expect(kv.store.get(cursor)).toBe('31');
+  });
+
+  it('leaves the walk alone during a preview', async () => {
+    const { calls, adapter, kv } = await warmed((n) => page(tokensFor('x', n)));
+    const before = kv.store.get(cursor);
+    await adapter.fetchListings(search, telAviv, { preview: true });
+    expect(calls).toEqual(pages(MIN_PAGES));
+    expect(kv.store.get(cursor)).toBe(before);
   });
 });
 

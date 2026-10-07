@@ -5,7 +5,7 @@ import { listingSchema, type Listing } from '../src/core/types.js';
 import { openDatabase, type Db } from '../src/db/database.js';
 import { ListingsRepo } from '../src/db/listings.repo.js';
 import { SearchesRepo } from '../src/db/searches.repo.js';
-import { dateFromImageUrl, parseYad2Feed, parseYad2FeedBody } from '../src/sources/yad2/yad2Normalize.js';
+import { dateFromImageUrl, parseYad2Feed, parseYad2FeedBody, parseYad2ItemBody } from '../src/sources/yad2/yad2Normalize.js';
 
 const feedPayload = JSON.parse(
   readFileSync(join(import.meta.dirname, 'fixtures', 'yad2-feed-tel-aviv.json'), 'utf8'),
@@ -198,5 +198,44 @@ describe('price drops', () => {
     const second = repo.findPriceDrops([listing(6_000)], 1);
     expect(second).toHaveLength(1);
     expect(second[0]?.previousPrice).toBe(6_500);
+  });
+});
+
+describe('yad2 item parser', () => {
+  const body = readFileSync(join(import.meta.dirname, 'fixtures', 'yad2-item-tel-aviv.json'), 'utf8');
+
+  it('reads the ad, its flags and its description', () => {
+    const item = parseYad2ItemBody(body, '')!;
+    expect(item.rental).toBe(true);
+    expect(() => listingSchema.parse(item.listing)).not.toThrow();
+    expect(item.listing).toMatchObject({
+      source: 'yad2',
+      sourceId: 'm58o2wkc',
+      url: 'https://www.yad2.co.il/realestate/item/m58o2wkc',
+      price: 10_000,
+      rooms: 3,
+      sqm: 75,
+      floor: 'קומה 1',
+      city: 'תל אביב יפו',
+      neighborhood: 'פלורנטין',
+      address: 'נחלת בנימין 139',
+      lat: 32.056814,
+      lng: 34.771828,
+      isBroker: false,
+      sequence: 57583014,
+      amenities: ['מעלית', 'מרפסת', 'ממ״ד', 'מיזוג', 'חיות מחמד'],
+      imageUrls: ['https://img.yad2.co.il/Pic/202610/06/2_2/o/y2_1pa_010875_20261006144414.jpeg'],
+    });
+    expect(item.listing.description).toMatch(/^להשכרה דירת 3 חדרים/);
+  });
+
+  it('labels a shelter in the building', () => {
+    const payload = JSON.parse(body);
+    payload.data.inProperty = { includeBuildingShelter: true };
+    expect(parseYad2ItemBody(JSON.stringify(payload), '')!.listing.amenities).toEqual(['מקלט']);
+  });
+
+  it('fails on a body that is not an ad', () => {
+    expect(() => parseYad2ItemBody('<html><title>x</title></html>', '')).toThrow('non-JSON');
   });
 });

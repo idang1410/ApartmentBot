@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 import type { SourceAdapter, StoredListings } from '../core/types.js';
+import type { KvRepo } from '../db/kv.repo.js';
 import { createFacebookAdapter } from './facebook/fbAdapter.js';
 import { createMarketplaceAdapter } from './facebook/marketplaceAdapter.js';
 import { createGenericAdapter } from './generic/genericAdapter.js';
@@ -47,13 +48,14 @@ import { createYad2Adapter } from './yad2/yad2Adapter.js';
 export function buildAdapters(
   stored: StoredListings,
   enabled: string[] | undefined = config.enabledSources,
+  kv?: KvRepo,
 ): SourceAdapter[] {
   const genericAdapters = GENERIC_SITES.map((site) =>
     createGenericAdapter(site, GENERIC_CADENCE_MINUTES),
   );
 
   const all = [
-    createYad2Adapter(),
+    createYad2Adapter(undefined, kv),
     realtaAdapter,
     homelessAdapter,
     onmapAdapter,
