@@ -11,7 +11,7 @@ import { isGeminiConfigured } from '../../llm/gemini.js';
 import { logger } from '../../logger.js';
 import { randomBetween, sleep } from '../../util/http.js';
 import { ParsedPostCache } from '../parsedPostCache.js';
-import { hasLoginProfile, LOGIN_INSTRUCTION, toListing } from './fbAdapter.js';
+import { hasLoginProfile, isOffline, LOGIN_INSTRUCTION, toListing } from './fbAdapter.js';
 import {
   LoggedOutError,
   openContext,
@@ -80,6 +80,7 @@ export function createMarketplaceAdapter(stored: StoredListings): SourceAdapter 
             pageText = await readMarketplaceItem(page, card.url);
           } catch (error) {
             if (error instanceof LoggedOutError) throw error;
+            if (isOffline(error)) break;
             // A single unreachable item must not lose the others.
             logger.warn({ err: error, item: card.itemId }, 'facebook marketplace item read failed');
             continue;

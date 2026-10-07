@@ -3,7 +3,7 @@ import { config } from '../src/config.js';
 import { findCityByKey } from '../src/core/cities.js';
 import { SessionExpiredError } from '../src/core/types.js';
 import type { SavedSearch } from '../src/core/types.js';
-import { createFacebookAdapter, toListing } from '../src/sources/facebook/fbAdapter.js';
+import { createFacebookAdapter, isOffline, toListing } from '../src/sources/facebook/fbAdapter.js';
 import { postLink, postText } from '../src/sources/facebook/fbBrowser.js';
 import { parsedPostSchema } from '../src/llm/extractPosts.js';
 import { FACEBOOK_GROUPS, ROTATING_GROUPS, groupsForCity, groupsToRead } from '../src/sources/facebook/fbGroups.js';
@@ -41,6 +41,11 @@ describe('facebook configuration', () => {
       groups.slice(fixed.length).forEach((g) => seen.add(g));
     }
     expect(seen.size).toBe(rotating.length);
+  });
+
+  it('tells a lost network from a single failing page', () => {
+    expect(isOffline(new Error('page.goto: net::ERR_INTERNET_DISCONNECTED at https://www.facebook.com/groups/1/'))).toBe(true);
+    expect(isOffline(new Error('page.goto: Timeout 30000ms exceeded.'))).toBe(false);
   });
 
   it('builds an adapter that stays off without a key and a session', () => {

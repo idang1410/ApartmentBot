@@ -95,6 +95,14 @@ export function createFacebookAdapter(stored: StoredListings): SourceAdapter {
   };
 }
 
+/** True for a page load that failed because the machine has no network, which fails every page alike. */
+export function isOffline(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /net::ERR_(INTERNET_DISCONNECTED|NETWORK_CHANGED|NAME_NOT_RESOLVED|ADDRESS_UNREACHABLE)/.test(error.message)
+  );
+}
+
 async function readGroups(groups: string[]): Promise<RawPost[]> {
   const context = await openContext(true);
   const posts: RawPost[] = [];
@@ -109,6 +117,11 @@ async function readGroups(groups: string[]): Promise<RawPost[]> {
         // hid an expired session for weeks.
         if (error instanceof LoggedOutError) {
           throw new SessionExpiredError(SOURCE, LOGIN_INSTRUCTION);
+        }
+        // Offline, the rest would fail too; stop and keep what was read.
+        if (isOffline(error)) {
+          logger.warn({ group }, 'facebook groups stopped: no network');
+          break;
         }
         // A single unreachable group must not lose the others.
         logger.warn({ err: error, group }, 'facebook group read failed');
