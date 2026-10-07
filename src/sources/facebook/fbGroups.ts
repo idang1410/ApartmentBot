@@ -25,6 +25,7 @@ export const FACEBOOK_GROUPS: Record<string, string[]> = {
   // Florentin and Jaffa: the owner's areas.
   'tel-aviv': [
     '282971075172305',
+    '305724686290054',
     '1529488140613580', // דירות שוות בפלורנטין ללא תיווך
     'florentinrentals', // פלורנטין לוח דירות
     '250039025123837', // דירות להשכרה בפלורנטין
