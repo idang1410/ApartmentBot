@@ -1,5 +1,6 @@
 import { InlineKeyboard, type Context } from 'grammy';
 import { config } from '../config.js';
+import { logger } from '../logger.js';
 import { describeSearch, nearMissReason } from '../core/filter.js';
 import type { HealthTracker } from '../core/health.js';
 import type { Notifier } from '../core/notifier.js';
@@ -404,6 +405,12 @@ export async function handleNow(ctx: Context, deps: CommandDeps): Promise<void> 
       : `סורק את כל המקורות חוץ מ-${skipped.join(', ')} ` +
           `(רץ לפני פחות מ-${FORCED_FACEBOOK_GAP_MINUTES} דקות) - זה לוקח כמה דקות`,
   );
+  // Not awaited: updates are handled one at a time, so waiting here would hold
+  // every button and command until the scan ends.
+  void reportScan(ctx, deps).catch((error) => logger.error({ err: error }, 'forced scan failed'));
+}
+
+async function reportScan(ctx: Context, deps: CommandDeps): Promise<void> {
   const result = await deps.scheduler.runNow({ force: true });
   if (!result) {
     await ctx.reply('הסריקה לא הושלמה. /status לפרטים.');
