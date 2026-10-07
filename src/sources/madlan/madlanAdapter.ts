@@ -1,4 +1,4 @@
-import type { CityEntry, Listing, SavedSearch, SourceAdapter } from '../../core/types.js';
+import type { CityEntry, DeepStep, Listing, SavedSearch, SourceAdapter } from '../../core/types.js';
 import { logger } from '../../logger.js';
 import { fetchText } from '../../util/http.js';
 import { normalizeMadlanBulletins, type MadlanBulletin } from './madlanNormalize.js';
@@ -54,6 +54,20 @@ const MAX_PAGES = 6;
 /** No point paging past what the age filter would reject anyway. */
 const MAX_AGE_DAYS = 7;
 
+/** Pages one deep-search step reads. */
+const DEEP_PAGES_PER_STEP = 3;
+
+/** The deep search ends at the first page older than this, or at DEEP_MAX_PAGES. */
+const DEEP_MAX_AGE_DAYS = 30;
+const DEEP_MAX_PAGES = 200;
+
+/**
+ * Deep-search pages by number, so each city's deep search reuses the nationwide pages
+ * another city read within DEEP_REUSE_MS.
+ */
+const deepPages = new Map<number, { at: number; bulletins: MadlanBulletin[] }>();
+const DEEP_REUSE_MS = 30 * 60_000;
+
 /**
  * The last nationwide sweep, reused across cities within one poll.
  *
@@ -75,6 +89,7 @@ const REUSE_MS = 2 * 60_000;
 /** Test seam: forget the cached sweep. */
 export function resetMadlanCache(): void {
   recent = null;
+  deepPages.clear();
 }
 
 export const madlanAdapter: SourceAdapter = {
@@ -99,6 +114,29 @@ export const madlanAdapter: SourceAdapter = {
     );
     return listings;
   },
+
+  async deepSearch(city: CityEntry, from: number): Promise<DeepStep> {
+    const cutoff = Date.now() - DEEP_MAX_AGE_DAYS * 86_400_000;
+    const listings: Listing[] = [];
+    let page = from;
+    let ended = false;
+    while (!ended && page < from + DEEP_PAGES_PER_STEP) {
+      let cached = deepPages.get(page);
+      if (!cached || Date.now() - cached.at >= DEEP_REUSE_MS) {
+        cached = { at: Date.now(), bulletins: await readPage(page) };
+        deepPages.set(page, cached);
+      }
+      const { bulletins } = cached;
+      page++;
+      listings.push(...normalizeMadlanBulletins(bulletins, city));
+      const last = bulletins.at(-1)?.lastUpdated;
+      ended =
+        bulletins.length < PAGE_SIZE ||
+        (typeof last === 'string' && Date.parse(last) < cutoff) ||
+        page >= DEEP_MAX_PAGES;
+    }
+    return { listings, next: ended ? null : page };
+  },
 };
 
 /** The newest listings in the country, fetched once and shared between cities. */
@@ -109,30 +147,7 @@ async function newestNationwide(): Promise<MadlanBulletin[]> {
   const collected: MadlanBulletin[] = [];
 
   for (let page = 0; page < MAX_PAGES; page++) {
-    const body = await fetchText(API, {
-      source: 'madlan',
-      profile: 'desktop',
-      json: {
-        query: QUERY,
-        variables: {
-          q: {
-            limit: PAGE_SIZE,
-            offset: page * PAGE_SIZE,
-            sortType: 'DATE',
-            sortOrder: 'DESC',
-            // Both lists must be present: the input marks them non-null.
-            userPreferences: { location: [], attributes: [] },
-          },
-        },
-      },
-      headers: {
-        Accept: '*/*',
-        Origin: 'https://www.madlan.co.il',
-        Referer: 'https://www.madlan.co.il/for-rent/',
-      },
-    });
-
-    const bulletins = readBulletins(body);
+    const bulletins = await readPage(page);
     if (bulletins.length === 0) break;
 
     collected.push(...bulletins);
@@ -146,6 +161,33 @@ async function newestNationwide(): Promise<MadlanBulletin[]> {
 
   recent = { at: Date.now(), bulletins: collected };
   return collected;
+}
+
+/** One page of the nationwide feed, newest first. */
+async function readPage(page: number): Promise<MadlanBulletin[]> {
+  const body = await fetchText(API, {
+    source: 'madlan',
+    profile: 'desktop',
+    json: {
+      query: QUERY,
+      variables: {
+        q: {
+          limit: PAGE_SIZE,
+          offset: page * PAGE_SIZE,
+          sortType: 'DATE',
+          sortOrder: 'DESC',
+          // Both lists must be present: the input marks them non-null.
+          userPreferences: { location: [], attributes: [] },
+        },
+      },
+    },
+    headers: {
+      Accept: '*/*',
+      Origin: 'https://www.madlan.co.il',
+      Referer: 'https://www.madlan.co.il/for-rent/',
+    },
+  });
+  return readBulletins(body);
 }
 
 /**

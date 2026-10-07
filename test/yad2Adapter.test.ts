@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { findCityByKey } from '../src/core/cities.js';
 import { BlockedError, type CityEntry, type SavedSearch } from '../src/core/types.js';
+import { DEEP_PREFIX } from '../src/core/deepSearch.js';
 import {
-  DEEP_CURSOR_PREFIX,
-  DEEP_PAGES_PER_CYCLE,
+  DEEP_MAX_PAGES,
+  DEEP_PAGES_PER_STEP,
   MAX_PAGES,
   MIN_PAGES,
+  SEEN_LIMIT,
+  SEEN_PREFIX,
   feedUrl,
   createYad2Adapter,
   type FeedFetcher,
@@ -191,92 +194,109 @@ describe('yad2 page walking', () => {
   });
 });
 
-describe('the yad2 deep walk', () => {
-  const memoryKv = () => {
-    const store = new Map<string, string>();
-    return { store, get: (k: string) => store.get(k), set: (k: string, v: string) => void store.set(k, v) };
-  };
-  const cursor = `${DEEP_CURSOR_PREFIX}tel-aviv`;
+const memoryKv = () => {
+  const store = new Map<string, string>();
+  return { store, get: (k: string) => store.get(k), set: (k: string, v: string) => void store.set(k, v) };
+};
 
-  /** An adapter that has already read the top once, so each cycle reads MIN_PAGES at the top. */
-  async function warmed(bodyFor: (page: number) => string, kv = memoryKv()) {
-    const rec = recording(bodyFor);
-    const adapter = createYad2Adapter(rec.fetchPage, kv);
-    await adapter.fetchListings(search, telAviv);
-    rec.calls.length = 0;
-    return { ...rec, adapter, kv };
-  }
+describe('yad2 read tokens in kv', () => {
+  const deepKey = `${DEEP_PREFIX}yad2:tel-aviv`;
 
-  it('reads past the top on a restart, then advances by two pages a cycle', async () => {
-    const { calls, adapter, kv } = await warmed((n) => page(tokensFor('x', n)));
-    expect(kv.store.get(cursor)).toBe(String(MAX_PAGES + DEEP_PAGES_PER_CYCLE + 1));
-
-    const listings = await adapter.fetchListings(search, telAviv);
-    expect(calls).toEqual([1, 2, 13, 14]);
-    expect(listings.map((l) => l.sourceId)).toEqual(expect.arrayContaining(['x13a', 'x14b']));
-    expect(kv.store.get(cursor)).toBe('15');
-  });
-
-  it('wraps to the page after the top at the end of the feed', async () => {
+  it('remembers what it read across a restart', async () => {
     const kv = memoryKv();
-    const { calls, adapter } = await warmed((n) => page(tokensFor('x', n), 20), kv);
-    kv.set(cursor, '20');
-
-    await adapter.fetchListings(search, telAviv);
-    expect(calls).toEqual([1, 2, 20, 3]);
-    expect(kv.store.get(cursor)).toBe('4');
-  });
-
-  it('wraps after an empty page', async () => {
-    const kv = memoryKv();
-    const { calls, adapter } = await warmed((n) => page(n >= 15 ? [] : tokensFor('x', n)), kv);
-    kv.set(cursor, '15');
-
-    await adapter.fetchListings(search, telAviv);
-    expect(calls).toEqual([1, 2, 15, 3]);
-  });
-
-  it('keeps its place across a restart', async () => {
-    const kv = memoryKv();
-    kv.set(cursor, '50');
     const { calls, fetchPage } = recording((n) => page(tokensFor('x', n)));
     await createYad2Adapter(fetchPage, kv).fetchListings(search, telAviv);
-    expect(calls).toEqual([...pages(MAX_PAGES), 50, 51]);
-  });
+    calls.length = 0;
 
-  it('stops on a block, throws it for the backoff, and keeps the cursor', async () => {
-    const kv = memoryKv();
-    const { calls, adapter } = await warmed((n) => {
-      if (n === 30) throw new BlockedError('yad2', 'Radware firewall event');
-      return page(tokensFor('x', n));
-    }, kv);
-    kv.set(cursor, '30');
-
-    await expect(adapter.fetchListings(search, telAviv)).rejects.toBeInstanceOf(BlockedError);
-    expect(calls).toEqual([1, 2, 30]);
-    expect(kv.store.get(cursor)).toBe('30');
-  });
-
-  it('stops on a failed page and keeps what it read', async () => {
-    const kv = memoryKv();
-    const { calls, adapter } = await warmed((n) => {
-      if (n === 31) throw new Error('socket hang up');
-      return page(tokensFor('x', n));
-    }, kv);
-    kv.set(cursor, '30');
-
-    const listings = await adapter.fetchListings(search, telAviv);
-    expect(calls).toEqual([1, 2, 30, 31]);
-    expect(listings.map((l) => l.sourceId)).toEqual(expect.arrayContaining(['x30a']));
-    expect(kv.store.get(cursor)).toBe('31');
-  });
-
-  it('leaves the walk alone during a preview', async () => {
-    const { calls, adapter, kv } = await warmed((n) => page(tokensFor('x', n)));
-    const before = kv.store.get(cursor);
-    await adapter.fetchListings(search, telAviv, { preview: true });
+    await createYad2Adapter(fetchPage, kv).fetchListings(search, telAviv);
     expect(calls).toEqual(pages(MIN_PAGES));
-    expect(kv.store.get(cursor)).toBe(before);
+  });
+
+  it('keeps a bounded set, newest first', async () => {
+    const kv = memoryKv();
+    kv.set(`${SEEN_PREFIX}tel-aviv`, JSON.stringify(Array.from({ length: SEEN_LIMIT }, (_, i) => `old${i}`)));
+    const { fetchPage } = recording((n) => page(tokensFor('x', n)));
+    await createYad2Adapter(fetchPage, kv).fetchListings(search, telAviv);
+
+    const stored = JSON.parse(kv.store.get(`${SEEN_PREFIX}tel-aviv`)!) as string[];
+    expect(stored).toHaveLength(SEEN_LIMIT);
+    expect(stored.slice(0, 2)).toEqual(['x1a', 'x1b']);
+  });
+
+  it('schedules a deep search when MAX_PAGES are all new after a gap', async () => {
+    const kv = memoryKv();
+    kv.set(`${SEEN_PREFIX}tel-aviv`, JSON.stringify(['gone']));
+    kv.set(deepKey, JSON.stringify({ next: null, found: { 42: 3 } }));
+    const { calls, fetchPage } = recording((n) => page(tokensFor('x', n)));
+    await createYad2Adapter(fetchPage, kv).fetchListings(search, telAviv);
+
+    expect(calls).toEqual(pages(MAX_PAGES));
+    expect(JSON.parse(kv.store.get(deepKey)!)).toEqual({ next: 0, found: {} });
+  });
+
+  it('does not schedule one on the very first walk, or once it meets read ads', async () => {
+    const kv = memoryKv();
+    kv.set(deepKey, JSON.stringify({ next: null, found: {} }));
+    const { fetchPage } = recording((n) => page(tokensFor('x', n)));
+    const adapter = createYad2Adapter(fetchPage, kv);
+    await adapter.fetchListings(search, telAviv);
+    await adapter.fetchListings(search, telAviv);
+
+    expect(JSON.parse(kv.store.get(deepKey)!).next).toBeNull();
+  });
+
+  it('leaves the tokens alone during a preview', async () => {
+    const kv = memoryKv();
+    const { fetchPage } = recording((n) => page(tokensFor('x', n)));
+    await createYad2Adapter(fetchPage, kv).fetchListings(search, telAviv, { preview: true });
+    expect(kv.store.has(`${SEEN_PREFIX}tel-aviv`)).toBe(false);
+  });
+
+  it('reads only the top in regular scans, with no deep cursor', async () => {
+    const kv = memoryKv();
+    const { calls, fetchPage } = recording((n) => page(tokensFor('x', n)));
+    const adapter = createYad2Adapter(fetchPage, kv);
+    await adapter.fetchListings(search, telAviv);
+    calls.length = 0;
+
+    await adapter.fetchListings(search, telAviv);
+    expect(calls).toEqual(pages(MIN_PAGES));
+    expect([...kv.store.keys()].some((k) => k.startsWith('yad2_deep_page:'))).toBe(false);
+  });
+});
+
+describe('the yad2 deep search', () => {
+  it('reads DEEP_PAGES_PER_STEP pages from where it was, and says the total', async () => {
+    const { calls, fetchPage } = recording((n) => page(tokensFor('x', n), 173));
+    const step = await createYad2Adapter(fetchPage).deepSearch!(telAviv, 10);
+    expect(calls).toEqual([11, 12, 13, 14, 15].slice(0, DEEP_PAGES_PER_STEP));
+    expect(step.next).toBe(10 + DEEP_PAGES_PER_STEP);
+    expect(step.total).toBe(173);
+    expect(step.listings.map((l) => l.sourceId)).toContain('x11a');
+  });
+
+  it('ends at the last page, or at an empty one', async () => {
+    const last = recording((n) => page(tokensFor('x', n), 3));
+    expect((await createYad2Adapter(last.fetchPage).deepSearch!(telAviv, 1)).next).toBeNull();
+    expect(last.calls).toEqual([2, 3]);
+
+    const empty = recording((n) => page(n >= 3 ? [] : tokensFor('x', n)));
+    expect((await createYad2Adapter(empty.fetchPage).deepSearch!(telAviv, 1)).next).toBeNull();
+    expect(empty.calls).toEqual([2, 3]);
+  });
+
+  it('stops at DEEP_MAX_PAGES', async () => {
+    const { calls, fetchPage } = recording((n) => page(tokensFor('x', n), 500));
+    const step = await createYad2Adapter(fetchPage).deepSearch!(telAviv, DEEP_MAX_PAGES - 1);
+    expect(calls).toEqual([DEEP_MAX_PAGES]);
+    expect(step.next).toBeNull();
+  });
+
+  it('throws a block, so the step is not counted', async () => {
+    const { fetchPage } = recording(() => {
+      throw new BlockedError('yad2', 'Radware firewall event');
+    });
+    await expect(createYad2Adapter(fetchPage).deepSearch!(telAviv, 0)).rejects.toBeInstanceOf(BlockedError);
   });
 });
 

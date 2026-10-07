@@ -1,4 +1,5 @@
 import { findCityByKey } from './cities.js';
+import { DeepSearch, FACEBOOK_SOURCES } from './deepSearch.js';
 import { classifyMatch } from './filter.js';
 import type { HealthTracker } from './health.js';
 import type { Notifier } from './notifier.js';
@@ -33,9 +34,6 @@ const SEQUENCE_BASELINE = 'seq_baseline:';
  * preview never moves it and a city read later in the same cycle is judged fairly.
  */
 const SEQUENCE_HIGH = 'seq_high:';
-
-/** Sources read through the owner's Facebook account. */
-const FACEBOOK_SOURCES = new Set(['facebook', 'facebook-marketplace']);
 
 /** A forced cycle skips a Facebook source that ran less than this many minutes ago, to protect the account. */
 export const FORCED_FACEBOOK_GAP_MINUTES = 10;
@@ -159,6 +157,8 @@ export interface RunOptions {
  */
 export class PollCycle {
   private cycleNumber = 0;
+  /** Steps through every source's whole catalogue, after each cycle's regular reads. */
+  readonly deep: DeepSearch;
 
   constructor(
     private readonly adapters: SourceAdapter[],
@@ -167,7 +167,9 @@ export class PollCycle {
     private readonly kv: KvRepo,
     private readonly notifier: Notifier,
     private readonly health: HealthTracker,
-  ) {}
+  ) {
+    this.deep = new DeepSearch(adapters, searches, listings, kv, notifier, health);
+  }
 
   /**
    * Whether a source's cadence has elapsed since it last ran.
@@ -316,6 +318,8 @@ export class PollCycle {
 
     // Only now, once every search was judged against the previous cycle's mark.
     this.raiseSequenceHigh([...cityCache.values()].flat());
+
+    await this.deep.step();
 
     result.notificationsSent = await this.notifier.flushPending();
     this.kv.set(KV_KEYS.lastCycleAt, new Date().toISOString());

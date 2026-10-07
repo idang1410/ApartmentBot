@@ -62,13 +62,15 @@ export class LoggedOutError extends Error {
  * Deliberately slow: it opens the group sorted by newest, waits, and scrolls
  * with pauses until it has maxPosts or the feed stops growing. That is roughly
  * what a person checking a group looks like, and it is the main defence
- * against the account being flagged.
+ * against the account being flagged. `isKnown` marks a post that is already
+ * read, or too old to want.
  */
 export async function readGroupPosts(
   context: BrowserContext,
   groupSlug: string,
   maxPosts: number,
-  isKnown: (postId: string) => boolean = () => false,
+  isKnown: (post: RawPost) => boolean = () => false,
+  maxScrolls = MAX_SCROLLS,
 ): Promise<RawPost[]> {
   const page = await context.newPage();
   try {
@@ -86,10 +88,10 @@ export async function readGroupPosts(
     // A single known post is not enough: pinned posts sit on top whatever their age.
     let knownInRow = 0;
     const caughtUp = () => knownInRow >= KNOWN_IN_ROW_TO_STOP;
-    // Stops after two scrolls that bring no new posts, or at MAX_SCROLLS.
+    // Stops after two scrolls that bring no new posts, or at maxScrolls.
     for (
       let round = 0, idle = 0;
-      round < MAX_SCROLLS && idle < 2 && posts.length < maxPosts && !caughtUp();
+      round < maxScrolls && idle < 2 && posts.length < maxPosts && !caughtUp();
       round++
     ) {
       // Tagged up front: a locator by position would shift as posts are read.
@@ -107,7 +109,7 @@ export async function readGroupPosts(
         // A post Facebook unloads while it is being read is skipped.
         const post = await readPostUnit(page.locator(`[data-apt-read="${tag}"]`), groupSlug).catch(() => null);
         if (!post) continue;
-        knownInRow = isKnown(post.postId) ? knownInRow + 1 : 0;
+        knownInRow = isKnown(post) ? knownInRow + 1 : 0;
         if (!posts.some((p) => p.postId === post.postId)) posts.push(post);
       }
       // The feed loads more only near its end, so scroll past the last post loaded.
@@ -127,7 +129,7 @@ export async function readGroupPosts(
 /** Posts read before, one after another, that end a group visit. */
 const KNOWN_IN_ROW_TO_STOP = 3;
 
-/** Scrolls per group visit, however many posts it has brought. */
+/** Scrolls per group visit by default, however many posts it has brought. */
 const MAX_SCROLLS = 25;
 
 /** A feed post not yet read; read ones are tagged so a later scroll skips them. */
@@ -223,23 +225,31 @@ export function postLink(hrefs: string[], groupSlug: string): { postId: string; 
 /**
  * Reads the item cards from a Marketplace category page, as (link, text) pairs.
  *
- * Paced like readGroupPosts: one page load, a pause, one scroll.
+ * Paced like readGroupPosts: one page load, a pause, then scrolls with pauses
+ * until `minCards` links are loaded, the page stops growing, or MAX_SCROLLS.
  */
 export async function readMarketplaceCards(
   page: Page,
   url: string,
+  minCards = 0,
 ): Promise<Array<{ href: string; text: string }>> {
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
   await sleep(randomBetween(3_000, 5_000));
 
   if (await isLoggedOut(page)) throw new LoggedOutError();
 
-  await page.mouse.wheel(0, randomBetween(600, 1_100));
-  await sleep(randomBetween(1_500, 3_000));
-
-  return page.$$eval('a[href*="/marketplace/item/"]', (links) =>
-    links.map((a) => ({ href: (a as HTMLAnchorElement).href, text: (a as HTMLElement).innerText })),
-  );
+  let cards: Array<{ href: string; text: string }> = [];
+  for (let round = 0, idle = 0; round < MAX_SCROLLS && idle < 2; round++) {
+    await page.mouse.wheel(0, randomBetween(600, 1_100));
+    await sleep(randomBetween(1_500, 3_000));
+    const loaded = await page.$$eval('a[href*="/marketplace/item/"]', (links) =>
+      links.map((a) => ({ href: (a as HTMLAnchorElement).href, text: (a as HTMLElement).innerText })),
+    );
+    idle = loaded.length > cards.length ? 0 : idle + 1;
+    cards = loaded;
+    if (cards.length >= minCards) break;
+  }
+  return cards;
 }
 
 /** Opens one Marketplace item and returns the page's visible text. */

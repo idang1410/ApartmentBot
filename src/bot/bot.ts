@@ -27,6 +27,7 @@ import {
   handleRemovePrompt,
   handleReview,
   handleCardsCallback,
+  handleDeep,
   handleStatus,
   handleStatusCallback,
   handleTrackLink,
@@ -88,6 +89,7 @@ export function registerHandlers(bot: Bot, deps: BotDeps): void {
   bot.command('map', (ctx) => handleMap(ctx, commandDeps));
   bot.command('status', (ctx) => handleStatus(ctx, commandDeps));
   bot.command('now', (ctx) => handleNow(ctx, commandDeps));
+  bot.command('deep', (ctx) => handleDeep(ctx, commandDeps));
   bot.command('quiet', (ctx) => handleQuiet(ctx, commandDeps, ctx.match ?? ''));
   bot.command('invite', (ctx) => handleInvite(ctx, commandDeps));
   bot.command('users', (ctx) => handleUsers(ctx, commandDeps));

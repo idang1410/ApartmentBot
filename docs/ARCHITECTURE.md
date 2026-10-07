@@ -56,13 +56,42 @@ per city, and not the newest ones.
 - The feed is ordered by last update, and a bump counts as one. `createYad2Adapter` reads from
   page 1 while pages hold organic ads it has not seen (between `MIN_PAGES` and `MAX_PAGES`).
   The promoted `platinum`/`booster` slots rotate on every request and are ignored for this.
-- The memory of what was read is in-process on purpose: after a restart the first walk goes
-  deep, which is the catch-up. Only a poll walk that finishes cleanly saves it. New-search
-  seeding passes `{ preview: true }` and walks on a copy.
+- The tokens recent walks read are kept in `kv` (`yad2_seen:<cityKey>`, the newest 1,000), so a
+  restart reads only back to them. Only a poll walk that finishes cleanly saves them. New-search
+  seeding passes `{ preview: true }` and walks on a copy. A walk that reaches `MAX_PAGES` without
+  meeting a read ad starts the city's Yad2 deep search again.
 - Only `region`, `city` and `page` are sent. Any other parameter makes the gateway's firewall
   answer with a small JSON record (which includes the caller's IP) instead of data.
   `detectBlockPage` recognises it, and no raw Yad2 body is ever logged.
 - City codes are four digits, zero-padded (`0168`). Sent unpadded, Yad2 returns an empty city.
+
+## Deep search
+
+`DeepSearch` (`src/core/deepSearch.ts`) reads each source's whole catalogue for every watched
+city once, so regular scans only read back to what was already seen. A source opts in with
+`deepSearch(city, from)`, which reads a few units (pages, or one Facebook group) and returns
+where the next step starts. Each poll cycle, after its regular reads, takes one step per
+unfinished source and city; no new city starts once the cycle has spent `DEEP_BUDGET_MS` on
+them. Progress is `deep:<source>:<cityKey>` in `kv`, so a restart resumes. A failed step is
+not counted and goes through `HealthTracker` like a fetch; a source backing off sits it out.
+
+A city with no record starts by itself; `/deep` starts every source over unless one is in
+progress. Matches are recorded as seen with their match kind, for `/review`, and never
+alerted. Each chat gets one message per source that found something and a summary when every
+source of the city is done.
+
+| Source | Step | Cap |
+| --- | --- | --- |
+| yad2 | 5 pages | `totalPages`, at most 200 |
+| realta | 10 pages of 50 | 200 pages |
+| onmap | 5 pages of 100 (`$skip`) | 100 pages |
+| madlan | 3 nationwide pages of 100, shared by cities for 30 minutes | 30 days old, or 200 pages |
+| facebook | one fixed area group (`FACEBOOK_GROUPS`); rotating groups have none | 14 days old, or 150 posts |
+| facebook-marketplace | 10 item pages out of the first 200 cards | 20 steps |
+
+The two Facebook sources share one step at most every 15 minutes (`deep_last_facebook` in `kv`).
+
+Homeless, the model-read sites and Telegram have no deep search.
 
 ## Nothing is alerted twice
 

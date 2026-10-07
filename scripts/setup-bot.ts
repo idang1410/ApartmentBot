@@ -18,6 +18,7 @@ await bot.api.setMyCommands([
   { command: 'review', description: 'מעבר על דירות שהתאימו לסימון' },
   { command: 'status', description: 'מצב המערכת והמקורות' },
   { command: 'now', description: 'סריקה מלאה עכשיו' },
+  { command: 'deep', description: 'חיפוש מעמיק בכל המודעות הקיימות' },
   { command: 'remove', description: 'מחיקת חיפוש' },
   { command: 'pause', description: 'השהיית התראות' },
   { command: 'resume', description: 'חידוש התראות' },

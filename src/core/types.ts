@@ -153,6 +153,20 @@ export interface SourceAdapter {
   /** False when this source has no location mapping for the search's city. */
   supports(search: SavedSearch, city: CityEntry): boolean;
   fetchListings(search: SavedSearch, city: CityEntry, options?: FetchOptions): Promise<Listing[]>;
+  /**
+   * One step of a deep search over the source's whole catalogue for a city, starting at
+   * unit `from` (a page or a group, 0 for the first). Absent on sources that cannot page.
+   */
+  deepSearch?(city: CityEntry, from: number): Promise<DeepStep>;
+}
+
+/** What one deep-search step read, and where the next one starts. */
+export interface DeepStep {
+  listings: Listing[];
+  /** The unit the next step starts at; null once the catalogue or the source's cap is reached. */
+  next: number | null;
+  /** How many units the whole catalogue has, when the source says. */
+  total?: number;
 }
 
 /**

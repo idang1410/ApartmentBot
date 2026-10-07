@@ -2,11 +2,13 @@ import { listingCityMatches } from '../../core/cities.js';
 import {
   BlockedError,
   type CityEntry,
+  type DeepStep,
   type FetchOptions,
   type Listing,
   type SavedSearch,
   type SourceAdapter,
 } from '../../core/types.js';
+import { restartDeepSearch } from '../../core/deepSearch.js';
 import type { KvRepo } from '../../db/kv.repo.js';
 import { logger } from '../../logger.js';
 import { fetchText } from '../../util/http.js';
@@ -25,24 +27,22 @@ const ITEM_API = 'https://gw.yad2.co.il/realestate-item';
 export const MIN_PAGES = 2;
 
 /**
- * Pages read at most. A restart forgets what was read, so the first walk goes this deep:
- * it is the catch-up after the PC was switched off. Ten pages is ~400 ads, several hours of
- * Tel Aviv's updates; an ad that sank further while the bot was down waits for the deep walk.
+ * Pages read at most. A walk that reaches it without meeting a read ad means the bot was
+ * off long enough to miss ads further down, so the city's deep search starts again.
  */
 export const MAX_PAGES = 10;
 
-/**
- * Pages read below the top each cycle. An ad that was never bumped sinks and stays sunk, so
- * a cursor walks the rest of the feed a little at a time and wraps at the end. Tel Aviv's
- * ~170 pages take ~85 cycles.
- */
-export const DEEP_PAGES_PER_CYCLE = 2;
+/** Followed by a city key; the tokens recent walks read there, newest first. */
+export const SEEN_PREFIX = 'yad2_seen:';
 
-/** Where the deep walk starts again after the last page. */
-const DEEP_FIRST_PAGE = MIN_PAGES + 1;
+/** Tokens kept per city: a few walks' worth, enough to recognise the top of the feed. */
+export const SEEN_LIMIT = 1_000;
 
-/** Followed by a city key; the next page the deep walk reads there. */
-export const DEEP_CURSOR_PREFIX = 'yad2_deep_page:';
+/** Pages one deep-search step reads; the gateway's throttle spaces them. */
+export const DEEP_PAGES_PER_STEP = 5;
+
+/** The deep search's last page. Tel Aviv's whole feed is ~175. */
+export const DEEP_MAX_PAGES = 200;
 
 /** One page of a city's rental feed, as the raw response body. */
 export type FeedFetcher = (city: CityEntry, page: number) => Promise<string>;
@@ -98,10 +98,21 @@ export function createYad2Adapter(
   fetchPage: FeedFetcher = fetchFeedPage,
   kv?: Pick<KvRepo, 'get' | 'set'>,
 ): SourceAdapter {
-  // Tokens read so far, per city. Memory is enough: it only decides how deep to read, and
-  // losing it on restart is exactly what makes the first walk a catch-up. Only a poll walk
-  // that finishes cleanly writes it.
-  const seenByCity = new Map<string, Set<string>>();
+  // Tokens read so far, per city, kept in kv so a restart does not walk to MAX_PAGES.
+  // Only a poll walk that finishes cleanly writes them.
+  const memory = new Map<string, string>();
+  const store = kv ?? {
+    get: (k: string) => memory.get(k),
+    set: (k: string, v: string) => void memory.set(k, v),
+  };
+  const readSeen = (cityKey: string): string[] => {
+    try {
+      const value: unknown = JSON.parse(store.get(`${SEEN_PREFIX}${cityKey}`) ?? '[]');
+      return Array.isArray(value) ? value.filter((t): t is string => typeof t === 'string') : [];
+    } catch {
+      return [];
+    }
+  };
 
   return {
     name: 'yad2',
@@ -117,12 +128,14 @@ export function createYad2Adapter(
       // Every walk works on a copy, and only a poll walk that ends on its own stop condition
       // saves it back. A preview's listings never reach the alert path, and a walk cut short
       // by an error or a block never read the pages below: counting either as read would
-      // make the next cycle stop at page 2, and a restart's catch-up would be lost for good.
-      const seen = new Set(seenByCity.get(city.key));
+      // make the next cycle stop at page 2 and lose the catch-up.
+      const previous = readSeen(city.key);
+      const seen = new Set(previous);
+      const walked: string[] = [];
       const collected = new Map<string, Listing>();
       let pagesRead = 0;
-      let totalPages = 1;
       let finished = true;
+      let caughtUp = false;
 
       for (let page = 1; page <= MAX_PAGES; page++) {
         let feed: Yad2FeedPage;
@@ -137,55 +150,55 @@ export function createYad2Adapter(
           break;
         }
         pagesRead = page;
-        totalPages = feed.totalPages;
 
         const sawNew = feed.tokens.some((token) => !seen.has(token));
-        for (const token of feed.tokens) seen.add(token);
+        for (const token of feed.tokens) {
+          seen.add(token);
+          walked.push(token);
+        }
         for (const listing of feed.listings) {
           if (listingCityMatches(city, listing.city)) collected.set(listing.sourceId, listing);
         }
 
-        if (page >= feed.totalPages) break;
-        if (page >= MIN_PAGES && !sawNew) break;
-      }
-
-      // The deep walk belongs to poll cycles only, and follows a top walk that finished. It
-      // runs before `seen` is saved, so a block here also makes the next top walk read deep.
-      let deepRead = 0;
-      if (finished && !options?.preview && kv) {
-        const key = `${DEEP_CURSOR_PREFIX}${city.key}`;
-        let next = Math.max(Number(kv.get(key)) || DEEP_FIRST_PAGE, pagesRead + 1);
-        for (let i = 0; i < DEEP_PAGES_PER_CYCLE; i++) {
-          if (next > totalPages) {
-            next = DEEP_FIRST_PAGE;
-            if (next <= pagesRead) break;
-          }
-          let feed: Yad2FeedPage;
-          try {
-            feed = parseYad2FeedBody(await fetchPage(city, next), city.name);
-          } catch (error) {
-            if (error instanceof BlockedError) throw error;
-            logger.warn({ err: error, city: city.key, page: next }, 'yad2 deep page failed');
-            break;
-          }
-          deepRead++;
-          totalPages = feed.totalPages;
-          for (const listing of feed.listings) {
-            if (listingCityMatches(city, listing.city)) collected.set(listing.sourceId, listing);
-          }
-          // An empty page is the end of the feed too, if the count was off.
-          next = feed.tokens.length === 0 ? DEEP_FIRST_PAGE : next + 1;
-          kv.set(key, String(next));
+        if (page >= feed.totalPages || (page >= MIN_PAGES && !sawNew)) {
+          caughtUp = true;
+          break;
         }
       }
 
-      if (finished && !options?.preview) seenByCity.set(city.key, seen);
+      if (finished && !options?.preview) {
+        const kept = new Set(walked);
+        const tokens = [...kept, ...previous.filter((t) => !kept.has(t))].slice(0, SEEN_LIMIT);
+        store.set(`${SEEN_PREFIX}${city.key}`, JSON.stringify(tokens));
+        // With no tokens stored, a deep walk is the first read, not a gap.
+        if (!caughtUp && previous.length > 0 && restartDeepSearch(store, 'yad2', city.key)) {
+          logger.info({ city: city.key }, 'yad2 walk found no read ads, deep search scheduled');
+        }
+      }
 
       logger.debug(
-        { search: search.id, city: city.key, pages: pagesRead, deepPages: deepRead, found: collected.size },
+        { search: search.id, city: city.key, pages: pagesRead, found: collected.size },
         'yad2 fetch done',
       );
       return [...collected.values()];
+    },
+
+    async deepSearch(city: CityEntry, from: number): Promise<DeepStep> {
+      const collected = new Map<string, Listing>();
+      let read = from;
+      let total = DEEP_MAX_PAGES;
+      let ended = false;
+      for (let i = 0; i < DEEP_PAGES_PER_STEP && !ended; i++) {
+        const feed = parseYad2FeedBody(await fetchPage(city, read + 1), city.name);
+        read++;
+        total = Math.min(feed.totalPages, DEEP_MAX_PAGES);
+        for (const listing of feed.listings) {
+          if (listingCityMatches(city, listing.city)) collected.set(listing.sourceId, listing);
+        }
+        // An empty page is the end of the feed too, if the count was off.
+        ended = read >= total || feed.tokens.length === 0;
+      }
+      return { listings: [...collected.values()], next: ended ? null : read, total };
     },
   };
 }

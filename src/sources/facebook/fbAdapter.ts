@@ -5,6 +5,7 @@ import { listingCityMatches } from '../../core/cities.js';
 import {
   SessionExpiredError,
   type CityEntry,
+  type DeepStep,
   type Listing,
   type SavedSearch,
   type SourceAdapter,
@@ -17,10 +18,15 @@ import { randomBetween, sleep } from '../../util/http.js';
 import { parseEntryDate, parsePostedDate } from '../../util/time.js';
 import { ParsedPostCache } from '../parsedPostCache.js';
 import { LoggedOutError, openContext, readGroupPosts, USER_DATA_DIR, type RawPost } from './fbBrowser.js';
-import { groupsForCity, groupsToRead } from './fbGroups.js';
+import { FACEBOOK_GROUPS, groupsForCity, groupsToRead } from './fbGroups.js';
 
 const SOURCE = 'facebook';
 const POSTS_PER_GROUP = 30;
+/** A deep-search group visit reads back this far, up to DEEP_POSTS_PER_GROUP posts. */
+const DEEP_MAX_AGE_DAYS = 14;
+const DEEP_POSTS_PER_GROUP = 150;
+/** Enough scrolls for DEEP_POSTS_PER_GROUP posts. */
+const DEEP_MAX_SCROLLS = 100;
 /** Posts the model has already judged are not sent again for a day. */
 const PARSED_TTL_MS = 24 * 60 * 60 * 1000;
 export const LOGIN_INSTRUCTION = 'npm run fb-login';
@@ -60,42 +66,70 @@ export function createFacebookAdapter(stored: StoredListings): SourceAdapter {
 
       const posts = await readGroups(
         groups,
-        (id) => stored.find(SOURCE, id) !== undefined || judged.has(SOURCE, id),
+        (post) => stored.find(SOURCE, post.postId) !== undefined || judged.has(SOURCE, post.postId),
       );
+      return toListings(posts, city);
+    },
 
-      const listings: Listing[] = [];
-      const unjudged: RawPost[] = [];
-      for (const post of posts) {
-        const known = stored.find(SOURCE, post.postId);
-        if (known) {
-          listings.push(known);
-          continue;
-        }
-        if (!judged.has(SOURCE, post.postId)) unjudged.push(post);
+    /** One fixed area group per step, read back DEEP_MAX_AGE_DAYS. Rotating groups have no deep search. */
+    async deepSearch(city: CityEntry, from: number): Promise<DeepStep> {
+      const groups = FACEBOOK_GROUPS[city.key] ?? [];
+      const group = groups[from];
+      if (!group) return { listings: [], next: null, total: groups.length };
+
+      const cutoff = Date.now() - DEEP_MAX_AGE_DAYS * 86_400_000;
+      const isOld = (post: RawPost) => (parsePostedDate(post.postedLabel)?.getTime() ?? Infinity) < cutoff;
+      let posts: RawPost[] = [];
+      const context = await openContext(true);
+      try {
+        posts = await readGroupPosts(context, group, DEEP_POSTS_PER_GROUP, isOld, DEEP_MAX_SCROLLS);
+      } catch (error) {
+        if (error instanceof LoggedOutError) throw new SessionExpiredError(SOURCE, LOGIN_INSTRUCTION);
+        // Offline, the step is tried again; a group that cannot be read is passed over.
+        if (isOffline(error)) throw error;
+        logger.warn({ err: error, group }, 'facebook deep group read failed');
+      } finally {
+        await context.close();
       }
-
-      const parsed = await extractPosts(
-        unjudged.map((post) => ({ id: post.postId, text: post.text })),
-        city.name,
-        SOURCE,
-      );
-
-      for (const post of unjudged) {
-        const result = parsed.get(post.postId);
-        // A post the model did not answer for is left for next time.
-        if (!result) continue;
-        judged.add(SOURCE, post.postId);
-        const listing = toListing(post, result, city);
-        if (listing) listings.push(listing);
-      }
-
-      logger.debug(
-        { city: city.key, posts: posts.length, sentToModel: unjudged.length, listings: listings.length },
-        'facebook fetch complete',
-      );
-      return listings;
+      const next = from + 1 < groups.length ? from + 1 : null;
+      return { listings: await toListings(posts.filter((p) => !isOld(p)), city), next, total: groups.length };
     },
   };
+
+  /** Posts as listings: recorded ones from the store, the rest not judged today through the model. */
+  async function toListings(posts: RawPost[], city: CityEntry): Promise<Listing[]> {
+    const listings: Listing[] = [];
+    const unjudged: RawPost[] = [];
+    for (const post of posts) {
+      const known = stored.find(SOURCE, post.postId);
+      if (known) {
+        listings.push(known);
+        continue;
+      }
+      if (!judged.has(SOURCE, post.postId)) unjudged.push(post);
+    }
+
+    const parsed = await extractPosts(
+      unjudged.map((post) => ({ id: post.postId, text: post.text })),
+      city.name,
+      SOURCE,
+    );
+
+    for (const post of unjudged) {
+      const result = parsed.get(post.postId);
+      // A post the model did not answer for is left for next time.
+      if (!result) continue;
+      judged.add(SOURCE, post.postId);
+      const listing = toListing(post, result, city);
+      if (listing) listings.push(listing);
+    }
+
+    logger.debug(
+      { city: city.key, posts: posts.length, sentToModel: unjudged.length, listings: listings.length },
+      'facebook fetch complete',
+    );
+    return listings;
+  }
 }
 
 /** True for a page load that failed because the machine has no network, which fails every page alike. */
@@ -106,7 +140,7 @@ export function isOffline(error: unknown): boolean {
   );
 }
 
-async function readGroups(groups: string[], isKnown: (postId: string) => boolean): Promise<RawPost[]> {
+async function readGroups(groups: string[], isKnown: (post: RawPost) => boolean): Promise<RawPost[]> {
   const context = await openContext(true);
   const posts: RawPost[] = [];
 

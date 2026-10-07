@@ -47,6 +47,7 @@ export const HELP_TEXT = [
   '/pause · /resume - השהיה וחידוש של כל ההתראות',
   '/status - מצב המערכת והמקורות',
   '/now - סריקה מלאה של כל המקורות עכשיו',
+  '/deep - חיפוש מעמיק בכל המודעות הקיימות בכל המקורות (מתחלק על פני כמה שעות)',
   '/quiet 23:00-07:30 - שעות שקט (/quiet off לביטול)',
   '/invite - קישור הזמנה לחבר (בעלים בלבד)',
   '/help - ההודעה הזו',
@@ -166,7 +167,22 @@ export async function handleStatus(ctx: Context, deps: CommandDeps): Promise<voi
     }
   }
 
+  const deep = deps.cycle.deep.progress(chatOf(ctx));
+  if (deep.length > 0) lines.push('', '<b>חיפוש מעמיק</b>', ...deep.map(escapeHtml));
+
   await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
+}
+
+/** Starts the deep search over for every source, unless one is in progress. */
+export async function handleDeep(ctx: Context, deps: CommandDeps): Promise<void> {
+  if (!deps.cycle.deep.restartAll()) {
+    await ctx.reply(['חיפוש מעמיק כבר רץ:', ...deps.cycle.deep.progress(chatOf(ctx))].join('\n'));
+    return;
+  }
+  await ctx.reply(
+    '🔎 התחלתי חיפוש מעמיק בכל המקורות. הוא רץ בחלקים בכל סבב ולוקח כמה שעות; ' +
+      'הדירות שיימצאו לא יישלחו אחת-אחת, ובסוף אשלח סיכום. /status מראה את ההתקדמות.',
+  );
 }
 
 export async function handleQuiet(ctx: Context, deps: CommandDeps, argument: string): Promise<void> {
