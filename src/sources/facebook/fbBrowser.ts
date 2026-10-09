@@ -13,6 +13,8 @@ export interface RawPost {
   url: string;
   /** The "15 באוגוסט ב-22:14" style stamp, as written. */
   postedLabel?: string;
+  /** The ad's photos, read from the page; the model never sees them. */
+  imageUrls?: string[];
 }
 
 /**
@@ -148,9 +150,14 @@ async function readPostUnit(unit: Locator, groupSlug: string): Promise<RawPost |
   await unit.locator('a[href^="?"], a[href="#"]').first().hover({ timeout: 3_000 }).catch(() => undefined);
   await sleep(randomBetween(300, 800));
 
-  const { text, hrefs } = await unit.evaluate((el) => ({
+  const { text, hrefs, images } = await unit.evaluate((el) => ({
     text: (el as HTMLElement).innerText,
     hrefs: Array.from(el.querySelectorAll('a'), (a) => a.href),
+    images: Array.from(el.querySelectorAll('img'), (img) => ({
+      src: img.currentSrc || img.src,
+      width: img.getBoundingClientRect().width,
+      top: 0,
+    })),
   }));
   const flat = postText(text);
   if (flat.length < 40) return null;
@@ -158,7 +165,32 @@ async function readPostUnit(unit: Locator, groupSlug: string): Promise<RawPost |
   if (!link) return null;
 
   const postedLabel = /(\d+\s+ב[א-ת]+|לפני\s+\S+|שעה|אתמול)/.exec(flat)?.[0];
-  return { ...link, groupSlug, text: flat.slice(0, 2_000), ...(postedLabel ? { postedLabel } : {}) };
+  const imageUrls = adImages(images);
+  return {
+    ...link,
+    groupSlug,
+    text: flat.slice(0, 2_000),
+    ...(postedLabel ? { postedLabel } : {}),
+    ...(imageUrls.length > 0 ? { imageUrls } : {}),
+  };
+}
+
+/** Rendered images of an ad by document position; `top` is 0 where position does not matter. */
+export interface PageImage {
+  src: string;
+  width: number;
+  top: number;
+}
+
+/**
+ * The ad's own photos: Facebook CDN images at least 150 px wide, first 4. Profile
+ * pictures and emoji render smaller; suggestions under a Marketplace item start below 1200 px.
+ */
+export function adImages(images: PageImage[]): string[] {
+  const urls = images
+    .filter((i) => /^https:\/\/scontent[\w.-]*\.fbcdn\.net\//.test(i.src) && i.width >= 150 && i.top < 1_200)
+    .map((i) => i.src);
+  return [...new Set(urls)].slice(0, 4);
 }
 
 const STORY_MESSAGE = '[data-ad-rendering-role="story_message"]';
@@ -252,8 +284,11 @@ export async function readMarketplaceCards(
   return cards;
 }
 
-/** Opens one Marketplace item and returns the page's visible text. */
-export async function readMarketplaceItem(page: Page, url: string): Promise<string> {
+/** Opens one Marketplace item and returns the page's visible text and the item's photos. */
+export async function readMarketplaceItem(
+  page: Page,
+  url: string,
+): Promise<{ text: string; imageUrls: string[] }> {
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
   await sleep(randomBetween(3_000, 6_000));
 
@@ -261,7 +296,14 @@ export async function readMarketplaceItem(page: Page, url: string): Promise<stri
 
   await page.mouse.wheel(0, randomBetween(300, 700));
   await sleep(randomBetween(1_000, 2_500));
-  return page.evaluate(() => document.body.innerText);
+  const { text, images } = await page.evaluate(() => ({
+    text: document.body.innerText,
+    images: Array.from(document.querySelectorAll('img'), (img) => {
+      const rect = img.getBoundingClientRect();
+      return { src: img.currentSrc || img.src, width: rect.width, top: rect.top + window.scrollY };
+    }),
+  }));
+  return { text, imageUrls: adImages(images) };
 }
 
 /** True when Facebook is showing a login form instead of the feed. */

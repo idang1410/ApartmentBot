@@ -36,6 +36,7 @@ const QUERY = `query($q: SearchBulletinQueryInput!) {
       addressDetails { city neighbourhood streetName streetNumber }
       locationPoint { lat lng }
       amenities { secureRoom miklat mamak }
+      images { imageUrl }
     }
   }
 }`;

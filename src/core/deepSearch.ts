@@ -3,6 +3,7 @@ import { classifyMatch } from './filter.js';
 import { isCadenceDue } from './pollCycle.js';
 import type { HealthTracker } from './health.js';
 import type { Notifier } from './notifier.js';
+import { addPhotoHashes } from './photoHash.js';
 import {
   BlockedError,
   SessionExpiredError,
@@ -184,6 +185,7 @@ export class DeepSearch {
       const fresh = this.listings
         .selectUnseen(matching, search.chatId)
         .filter((l) => !this.listings.isClosed(l, search.chatId));
+      await addPhotoHashes(fresh);
       const added = this.listings.seedAsSeen(fresh, search.id, search.chatId, kindOf);
       if (added > 0) state.found[search.chatId] = (state.found[search.chatId] ?? 0) + added;
     }

@@ -20,6 +20,7 @@ export interface MadlanBulletin {
   } | null;
   locationPoint?: { lat?: unknown; lng?: unknown } | null;
   amenities?: { secureRoom?: unknown; miklat?: unknown; mamak?: unknown } | null;
+  images?: Array<{ imageUrl?: unknown } | null> | null;
 }
 
 /**
@@ -30,6 +31,9 @@ export interface MadlanBulletin {
  * at the top end and this one is off the scale entirely.
  */
 const RENT = 'unitRent';
+
+/** Madlan publishes image paths; its image server answers one only under a transform, here a resize. */
+const IMAGE_BASE = 'https://images2.madlan.co.il/t:nonce:v=2;resize:width=640/';
 
 /**
  * Turns one page of bulletins into listings for a city.
@@ -70,7 +74,11 @@ export function normalizeMadlanBulletins(
         ...(bulletin.amenities?.secureRoom === true ? ['ממ״ד'] : []),
         ...(bulletin.amenities?.miklat === true || bulletin.amenities?.mamak === true ? ['מקלט'] : []),
       ],
-      imageUrls: [],
+      imageUrls: (bulletin.images ?? [])
+        .map((image) => text(image?.imageUrl))
+        .filter((path) => path !== undefined)
+        .slice(0, 4)
+        .map((path) => `${IMAGE_BASE}${encodeURI(path.replace(/^\//, ''))}`),
       ...(address ? { address } : {}),
       ...(typeof bulletin.locationPoint?.lat === 'number' &&
       typeof bulletin.locationPoint?.lng === 'number'

@@ -31,6 +31,8 @@ export const listingSchema = z.object({
   /** Free-text ad body, when the source publishes one. */
   description: z.string().optional(),
   imageUrls: z.array(z.string().url()).default([]),
+  /** dHash of each of the first photos, 16 hex digits apiece; set once, before the listing is stored. */
+  photoHashes: z.array(z.string()).optional(),
   postedAt: z.date().optional(),
   /** Move-in date, when the ad states one; `entryText` keeps the wording ("מיידי"). */
   entryDate: z.date().optional(),
@@ -217,10 +219,41 @@ const SQM_TOLERANCE = 5;
  * house numbers, when both are known, must be equal. A street with no number
  * matches a numbered one only when both sizes are known and close. Two known,
  * different floors make it 'maybe'. Two ads with one phone number are also
- * 'same' when samePoster says so.
+ * 'same' when samePoster says so. In one city, two shared photos make it
+ * 'same' whatever the address says, and one shared photo makes it at least 'maybe'.
  */
 export function sameFlat(a: Listing, b: Listing): 'same' | 'maybe' | null {
   if (samePoster(a, b)) return 'same';
+  const photos = normalizeCityName(a.city) === normalizeCityName(b.city) ? sharedPhotos(a, b) : 0;
+  if (photos >= 2) return 'same';
+  return sameAddress(a, b) ?? (photos === 1 ? 'maybe' : null);
+}
+
+/** Photo hashes this many bits apart or fewer are one photo, edited. */
+const PHOTO_DISTANCE = 6;
+
+/** How many of a's photos match a different photo of b. */
+function sharedPhotos(a: Listing, b: Listing): number {
+  const unmatched = [...(b.photoHashes ?? [])];
+  let shared = 0;
+  for (const hash of a.photoHashes ?? []) {
+    const at = unmatched.findIndex((other) => hammingDistance(hash, other) <= PHOTO_DISTANCE);
+    if (at === -1) continue;
+    unmatched.splice(at, 1);
+    shared++;
+  }
+  return shared;
+}
+
+/** The number of bits that differ between two hex hashes. */
+export function hammingDistance(a: string, b: string): number {
+  let bits = BigInt(`0x${a}`) ^ BigInt(`0x${b}`);
+  let count = 0;
+  for (; bits > 0n; bits >>= 1n) count += Number(bits & 1n);
+  return count;
+}
+
+function sameAddress(a: Listing, b: Listing): 'same' | 'maybe' | null {
   if (!a.address || !b.address || a.rooms === null || a.rooms !== b.rooms) return null;
   if (normalizeCityName(a.city) !== normalizeCityName(b.city)) return null;
   const street = normalizePlace(a.address);

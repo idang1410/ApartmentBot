@@ -143,7 +143,7 @@ async function linkText(target: LinkTarget): Promise<string> {
   const context = await openContext(true);
   try {
     if (target.kind === 'facebook-post') return await readPost(context, target.url);
-    return itemDetailsText(await readMarketplaceItem(await context.newPage(), target.url), '');
+    return itemDetailsText((await readMarketplaceItem(await context.newPage(), target.url)).text, '');
   } finally {
     await context.close();
   }

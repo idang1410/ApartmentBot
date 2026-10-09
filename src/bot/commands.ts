@@ -4,6 +4,7 @@ import { logger } from '../logger.js';
 import { describeSearch, nearMissReason } from '../core/filter.js';
 import type { HealthTracker } from '../core/health.js';
 import type { Notifier } from '../core/notifier.js';
+import { addPhotoHashes } from '../core/photoHash.js';
 import { FORCED_FACEBOOK_GAP_MINUTES, type PollCycle } from '../core/pollCycle.js';
 import type { Scheduler } from '../core/scheduler.js';
 import { sameFlat, type Listing } from '../core/types.js';
@@ -505,6 +506,7 @@ async function reportLink(deps: CommandDeps, target: LinkTarget, chat: number): 
       : rental
         ? undefined
         : '⚠️ לפי הניתוח זו לא מודעה להשכרה - שמרתי בכל זאת';
+  await addPhotoHashes([listing]);
   await showTracked(deps, listing, chat, header);
 }
 

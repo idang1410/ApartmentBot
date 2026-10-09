@@ -485,20 +485,23 @@ export class ListingsRepo {
   /**
    * This chat's other stored listings of the same flat from the last `days`,
    * from any search and from its tracked flats, one per source id. A copy the
-   * chat tracked carries its status.
+   * chat tracked carries its status. Candidates have the same rooms, or photo
+   * hashes when the listing has them.
    */
   copiesOf(listing: Listing, chatId: number, days = 60): ListingCopy[] {
-    if (!listing.address || listing.rooms === null) return [];
+    const photos = listing.photoHashes ? 1 : 0;
+    if (!photos && (!listing.address || listing.rooms === null)) return [];
+    const candidate = `(json_extract(payload, '$.rooms') = ? OR (? AND json_extract(payload, '$.photoHashes') IS NOT NULL))`;
     const rows = this.db
       .prepare(
         `SELECT payload, status FROM tracked_listings
-          WHERE chat_id = ? AND json_extract(payload, '$.rooms') = ? AND updated_at >= datetime('now', ?)
+          WHERE chat_id = ? AND ${candidate} AND updated_at >= datetime('now', ?)
          UNION ALL
          SELECT payload, NULL FROM seen_listings
-          WHERE chat_id = ? AND payload IS NOT NULL AND json_extract(payload, '$.rooms') = ?
+          WHERE chat_id = ? AND payload IS NOT NULL AND ${candidate}
             AND first_seen >= datetime('now', ?)`,
       )
-      .all(chatId, listing.rooms, `-${days} days`, chatId, listing.rooms, `-${days} days`) as Array<{
+      .all(chatId, listing.rooms, photos, `-${days} days`, chatId, listing.rooms, photos, `-${days} days`) as Array<{
       payload: string;
       status: string | null;
     }>;

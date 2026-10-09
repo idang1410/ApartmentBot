@@ -223,7 +223,7 @@ export function toListing(
     ...(parsed.floor ? { floor: parsed.floor } : {}),
     amenities: parsed.amenities,
     ...(description ? { description } : {}),
-    imageUrls: [],
+    imageUrls: post.imageUrls ?? [],
     ...(postedAt ? { postedAt } : {}),
     ...(parsed.entryDateText ? { entryText: parsed.entryDateText } : {}),
     ...(entryDate ? { entryDate } : {}),

@@ -3,6 +3,7 @@ import { DeepSearch, FACEBOOK_SOURCES } from './deepSearch.js';
 import { classifyMatch } from './filter.js';
 import type { HealthTracker } from './health.js';
 import type { Notifier } from './notifier.js';
+import { addPhotoHashes } from './photoHash.js';
 import {
   BlockedError,
   SessionExpiredError,
@@ -260,6 +261,8 @@ export class PollCycle {
       const kindOf = (l: Listing): MatchKind => classifyMatch(l, search) ?? 'exact';
       const matching = fetched.filter((l) => classifyMatch(l, search) !== null);
       const unseen = this.listings.selectUnseen(matching, search.chatId);
+      // Hashed before anything below stores them, so the hashes reach the stored payload.
+      await addPhotoHashes(unseen);
 
       // A source being polled for the first time returns its whole back
       // catalogue, which is not news - those ads may be years old, and no

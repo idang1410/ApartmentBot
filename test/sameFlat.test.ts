@@ -57,6 +57,20 @@ describe('same flat', () => {
     expect(sameFlat(agent, ad({ address: 'השוק', sqm: undefined }))).toBeNull();
     expect(sameFlat(ad({ sqm: 83 }), ad({ address: 'רחוב השוק', floor: '3' }))).toBe('same');
   });
+
+  it('matches by photos: two shared ones are the flat, one is maybe, none changes nothing', () => {
+    // 0f00ff00ff00ff01 is 0f00ff00ff00ff00 with one bit flipped, an edited copy.
+    const photos = (...photoHashes: string[]) =>
+      ad({ address: undefined, rooms: null, phone: undefined, photoHashes });
+    const a = photos('0f00ff00ff00ff00', 'aaaaaaaaaaaaaaaa', '1234123412341234');
+    expect(sameFlat(a, photos('0f00ff00ff00ff01', 'aaaaaaaaaaaaaaab'))).toBe('same');
+    expect(sameFlat(a, photos('0f00ff00ff00ff01', 'ffffffffffffffff'))).toBe('maybe');
+    expect(sameFlat(a, photos('ffffffffffffffff'))).toBeNull();
+    expect(sameFlat(photos('0f00ff00ff00ff00', '0f00ff00ff00ff00'), photos('0f00ff00ff00ff01'))).toBe('maybe');
+    expect(sameFlat(a, { ...photos('0f00ff00ff00ff01', 'aaaaaaaaaaaaaaab'), city: 'חיפה' })).toBeNull();
+    expect(sameFlat({ ...agent, photoHashes: ['ffffffffffffffff'] }, { ...owner, photoHashes: ['0000000000000000'] })).toBe('same');
+    expect(sameFlat({ ...agent, photoHashes: ['0f00ff00ff00ff00'] }, ad({ address: 'הרצל 37', photoHashes: ['0f00ff00ff00ff00'] }))).toBe('maybe');
+  });
 });
 
 describe('same phone', () => {

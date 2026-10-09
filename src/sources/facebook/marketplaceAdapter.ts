@@ -102,9 +102,9 @@ export function createMarketplaceAdapter(stored: StoredListings): SourceAdapter 
       unread = unseen.length;
       for (const card of unseen.slice(0, ITEMS_PER_VISIT)) {
         await sleep(randomBetween(8_000, 20_000));
-        let pageText: string;
+        let item: { text: string; imageUrls: string[] };
         try {
-          pageText = await readMarketplaceItem(page, card.url);
+          item = await readMarketplaceItem(page, card.url);
         } catch (error) {
           if (error instanceof LoggedOutError) throw error;
           if (isOffline(error)) break;
@@ -112,13 +112,14 @@ export function createMarketplaceAdapter(stored: StoredListings): SourceAdapter 
           logger.warn({ err: error, item: card.itemId }, 'facebook marketplace item read failed');
           continue;
         }
-        const text = itemDetailsText(pageText, card.title);
+        const text = itemDetailsText(item.text, card.title);
         posts.push({
           postId: card.itemId,
           groupSlug: 'marketplace',
           // An item page that yielded nothing still has its card.
           text: text || [card.title, card.price ? `₪${card.price}` : '', card.location].join('\n'),
           url: card.url,
+          imageUrls: item.imageUrls,
         });
       }
     } catch (error) {

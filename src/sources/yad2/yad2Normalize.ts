@@ -276,7 +276,7 @@ function toListing(m: Yad2Item, fallbackCity: string, isBroker: boolean | undefi
       .filter((n): n is string => Boolean(n))
       .slice(0, 6),
     // coverImage is the photo Yad2 itself leads with; images[] is the gallery.
-    imageUrls: images.slice(0, 1),
+    imageUrls: [...new Set(images)].slice(0, 4),
     ...(postedAt ? { postedAt } : {}),
     originalSource: 'יד2',
     ...(isBroker !== undefined ? { isBroker } : {}),

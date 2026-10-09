@@ -224,7 +224,12 @@ describe('yad2 item parser', () => {
       isBroker: false,
       sequence: 57583014,
       amenities: ['מעלית', 'מרפסת', 'ממ״ד', 'מיזוג', 'חיות מחמד'],
-      imageUrls: ['https://img.yad2.co.il/Pic/202610/06/2_2/o/y2_1pa_010875_20261006144414.jpeg'],
+      imageUrls: [
+        'https://img.yad2.co.il/Pic/202610/06/2_2/o/y2_1pa_010875_20261006144414.jpeg',
+        'https://img.yad2.co.il/Pic/202610/06/2_2/o/y2_2_06174_20261006205915.jpeg',
+        'https://img.yad2.co.il/Pic/202610/06/2_2/o/y2_3_06494_20261006205922.jpeg',
+        'https://img.yad2.co.il/Pic/202610/06/2_2/o/y2_4_05886_20261006205930.jpeg',
+      ],
     });
     expect(item.listing.description).toMatch(/^להשכרה דירת 3 חדרים/);
   });

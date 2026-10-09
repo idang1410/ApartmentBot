@@ -130,7 +130,7 @@ export function parseRealtaListings(payload: unknown, fallbackCity: string): Lis
         : {}),
       ...(p.floorsTotal ? { floorsTotal: p.floorsTotal } : {}),
       amenities: (p.amenities ?? []).map(amenityLabel),
-      imageUrls: (p.images ?? []).filter((u) => /^https:\/\//.test(u)).slice(0, 1),
+      imageUrls: (p.images ?? []).filter((u) => /^https:\/\//.test(u)).slice(0, 4),
       ...(p.publishedAt && !Number.isNaN(Date.parse(p.publishedAt))
         ? { postedAt: new Date(p.publishedAt) }
         : {}),

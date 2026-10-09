@@ -51,7 +51,9 @@ const propertySchema = z.object({
     })
     .nullish(),
   advertiser_type: z.string().nullish(),
-  images: z.array(z.union([z.string(), z.object({ url: z.string().nullish() })])).nullish(),
+  images: z
+    .array(z.union([z.string(), z.object({ url: z.string().nullish(), gallery: z.string().nullish() })]))
+    .nullish(),
   created_at: z.string().nullish(),
   search_date: z.string().nullish(),
 });
@@ -122,9 +124,9 @@ export function parseOnmapListings(payload: unknown, cityName: string): Listing[
       ...(positive(floor?.out_of) ? { floorsTotal: floor!.out_of as number } : {}),
       amenities: [],
       imageUrls: (p.images ?? [])
-        .map((i) => (typeof i === 'string' ? i : i?.url))
+        .map((i) => (typeof i === 'string' ? i : (i?.url ?? i?.gallery)))
         .filter((u): u is string => typeof u === 'string' && u.startsWith('https://'))
-        .slice(0, 1),
+        .slice(0, 4),
       ...(postedAt ? { postedAt } : {}),
       originalSource: 'OnMap',
       ...(p.advertiser_type ? { isBroker: !/private|owner|בעל/i.test(p.advertiser_type) } : {}),
