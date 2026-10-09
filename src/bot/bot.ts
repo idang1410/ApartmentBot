@@ -164,14 +164,14 @@ export function registerHandlers(bot: Bot, deps: BotDeps): void {
 }
 
 /**
- * A short label for logs: the command word, or the kind of update. Never the
+ * A short label for logs: the command word, a button's callback code, or the kind of update. Never the
  * message body, which would put searches and personal text in the log file.
  */
 function commandLabel(ctx: Context): string {
   const text = ctx.message?.text ?? '';
   const command = /^\/([A-Za-z0-9_]+)/.exec(text)?.[1];
   if (command) return `/${command}`;
-  if (ctx.callbackQuery !== undefined) return 'button';
+  if (ctx.callbackQuery !== undefined) return `button ${ctx.callbackQuery.data ?? ''}`.trim();
   if (text) return 'text';
   return 'update';
 }
