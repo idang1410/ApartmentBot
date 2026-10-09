@@ -59,6 +59,33 @@ describe('same flat', () => {
   });
 });
 
+describe('same phone', () => {
+  const post = (overrides: Partial<Listing>) =>
+    ad({ source: 'facebook', floor: undefined, isBroker: false, phone: '054-2249488', ...overrides });
+
+  it('matches a cross-post whose room count was misread', () => {
+    const a = post({ sourceId: 'a', address: 'ויטל 6', rooms: 4, sqm: 82, price: 7_900 });
+    const b = post({ sourceId: 'b', address: 'ויטל 6', rooms: 3, sqm: 82, price: 7_900, phone: '0542249488' });
+    expect(sameFlat(a, b)).toBe('same');
+  });
+
+  it('matches a repost at a new price, and one with no street or rooms', () => {
+    const a = post({ address: 'השופט הרצל', sqm: undefined, price: 8_000 });
+    expect(sameFlat(a, post({ address: undefined, sqm: undefined, price: 7_700 }))).toBe('same');
+    const noRooms = post({ address: undefined, rooms: null, sqm: 70, price: 6_700 });
+    expect(sameFlat(noRooms, post({ address: 'זבולון', rooms: null, sqm: 70, price: 6_700 }))).toBe('same');
+  });
+
+  it('keeps apart a broker number on other streets, rooms, sizes or with nothing to compare', () => {
+    expect(sameFlat(post({ address: 'ויטל 6' }), post({ address: 'זבולון 3' }))).toBeNull();
+    expect(sameFlat(post({ address: 'השוק' }), post({ address: 'השוק', rooms: 4 }))).toBeNull();
+    expect(sameFlat(post({ sqm: 60 }), post({ sqm: 80, address: undefined }))).toBeNull();
+    const vague = { address: undefined, sqm: undefined, rooms: null };
+    expect(sameFlat(post({ ...vague, price: 6_000 }), post({ ...vague, price: 7_000 }))).toBeNull();
+    expect(sameFlat(post({ address: 'ויטל 6' }), post({ address: 'ויטל 6', phone: '054-1111111' }))).toBe('same');
+  });
+});
+
 describe('copies on the card', () => {
   it('lists each copy with board, broker, price difference and link', () => {
     const lines = formatCopies(agent, [

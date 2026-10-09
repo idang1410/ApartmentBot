@@ -216,9 +216,11 @@ const SQM_TOLERANCE = 5;
  * city, street and rooms must agree. Sizes, when both are known, must be close;
  * house numbers, when both are known, must be equal. A street with no number
  * matches a numbered one only when both sizes are known and close. Two known,
- * different floors make it 'maybe'.
+ * different floors make it 'maybe'. Two ads with one phone number are also
+ * 'same' when samePoster says so.
  */
 export function sameFlat(a: Listing, b: Listing): 'same' | 'maybe' | null {
+  if (samePoster(a, b)) return 'same';
   if (!a.address || !b.address || a.rooms === null || a.rooms !== b.rooms) return null;
   if (normalizeCityName(a.city) !== normalizeCityName(b.city)) return null;
   const street = normalizePlace(a.address);
@@ -234,6 +236,31 @@ export function sameFlat(a: Listing, b: Listing): 'same' | 'maybe' | null {
   const floorA = a.floor ? floorKey(a.floor) : null;
   const floorB = b.floor ? floorKey(b.floor) : null;
   return floorA !== null && floorB !== null && floorA !== floorB ? 'maybe' : 'same';
+}
+
+/**
+ * One phone number on two ads in one city, with nothing that tells them apart:
+ * rooms equal or unknown, sizes close or unknown, and, when both name a street,
+ * one street and no two different house numbers. Rooms may differ when both
+ * give the same house number, since free-text ads misread the room count. A
+ * broker's number is on many flats, so with no street on either and a size
+ * missing, the room count or the price must also be equal.
+ */
+function samePoster(a: Listing, b: Listing): boolean {
+  const phone = a.phone?.replace(/\D/g, '').replace(/^972/, '0');
+  if (!phone || phone !== b.phone?.replace(/\D/g, '').replace(/^972/, '0')) return false;
+  if (normalizeCityName(a.city) !== normalizeCityName(b.city)) return false;
+  const bothSqm = a.sqm !== undefined && b.sqm !== undefined;
+  if (bothSqm && Math.abs(a.sqm! - b.sqm!) > SQM_TOLERANCE) return false;
+  const streetA = a.address ? normalizePlace(a.address) : '';
+  const streetB = b.address ? normalizePlace(b.address) : '';
+  const numA = a.address ? houseNumber(a.address) : null;
+  const numB = b.address ? houseNumber(b.address) : null;
+  if (streetA && streetB && (streetA !== streetB || (numA && numB && numA !== numB))) return false;
+  const sameBuilding = streetA !== '' && numA !== null && numA === numB;
+  if (a.rooms !== null && b.rooms !== null && a.rooms !== b.rooms && !sameBuilding) return false;
+  if (streetA || streetB || bothSqm) return true;
+  return (a.rooms !== null && a.rooms === b.rooms) || (a.price !== null && a.price === b.price);
 }
 
 /** Another stored listing of the same flat, with the status the owner set on it. */

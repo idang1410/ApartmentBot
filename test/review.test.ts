@@ -87,6 +87,25 @@ describe('/review queue', () => {
     expect(reviewQueue(repo, [search], CHAT, false)).toHaveLength(1);
   });
 
+  it('shows copies of one flat at other prices on one card, newest first', () => {
+    seen(ad('fb', { address: 'השוק', price: 6_000 }), 2);
+    seen(ad('onmap', { address: 'השוק', price: 6_400 }), 1);
+    const queue = reviewQueue(repo, [search], CHAT, false);
+    expect(queue.map((item) => [item.listing.sourceId, item.copies.map((c) => c.sourceId)])).toEqual([
+      ['onmap', ['fb']],
+    ]);
+  });
+
+  it('takes the status of any copy, tracked or stored', () => {
+    seen(ad('1', { address: 'אברבנאל 13' }), 1);
+    seen(ad('2', { address: 'השוק', phone: '054-2249488' }), 2);
+    seen(ad('3', { address: undefined, sqm: 70, price: 6_200, phone: '0542249488' }), 3);
+    repo.setStatus(repo.track(ad('old', { address: 'אברבנאל 13', price: 5_000 }), CHAT), CHAT, 'rejected');
+    repo.setStatus(repo.track(ad('3', { address: undefined, sqm: 70, price: 6_200, phone: '0542249488' }), CHAT), CHAT, 'contacted');
+    expect(ids()).toEqual(['2']);
+    expect(ids(true)).toEqual([]);
+  });
+
   it('includes flats stored by a search that was since deleted', () => {
     const old = new SearchesRepo(db).create({ ...search, name: 'old' });
     repo.seedAsSeen([ad('1')], old.id, CHAT);

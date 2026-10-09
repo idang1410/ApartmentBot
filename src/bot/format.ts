@@ -5,7 +5,7 @@ import { describeComparison, type MarketComparison } from '../core/marketStats.j
 import { STATUSES, statusCallback, statusLabel, type TrackStatus } from '../core/tracking.js';
 import type { Listing, ListingCopy, SavedSearch } from '../core/types.js';
 
-const SOURCE_LABELS: Record<string, string> = {
+export const SOURCE_LABELS: Record<string, string> = {
   homeless: 'הומלס',
   madlan: 'מדלן',
   realta: 'Realta',

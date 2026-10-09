@@ -9,7 +9,7 @@ import type { Scheduler } from '../core/scheduler.js';
 import { sameFlat, type Listing } from '../core/types.js';
 import { classifyLink, readLink, type LinkTarget } from '../sources/linkReader.js';
 import { STATUSES, parseStatusCallback, statusLabel, type TrackStatus } from '../core/tracking.js';
-import { describeSearchScope, escapeHtml, listingKeyboard, searchTitle } from './format.js';
+import { describeSearchScope, escapeHtml, listingKeyboard, searchTitle, SOURCE_LABELS } from './format.js';
 import { CARDS_PAGE } from './digest.js';
 import { REVIEW_DAYS, reviewQueue, type ReviewItem } from './review.js';
 import { KV_KEYS, type KvRepo } from '../db/kv.repo.js';
@@ -244,9 +244,18 @@ export async function handleReview(ctx: Context, deps: CommandDeps, argument: st
     );
     return;
   }
-  const cards = queue.map(({ listing, matchKind, search }: ReviewItem) => {
+  const cards = queue.map(({ listing, matchKind, search, copies }: ReviewItem) => {
     const reason = matchKind === 'near' ? nearMissReason(listing, search) : null;
-    return { listing, ...(reason ? { header: `🤏 <b>כמעט מתאים</b> · ${escapeHtml(reason)}` } : {}) };
+    const header = [
+      reason ? `🤏 <b>כמעט מתאים</b> · ${escapeHtml(reason)}` : null,
+      ...copies.map((copy) =>
+        copyLine(copy, [
+          escapeHtml(copy.originalSource ?? SOURCE_LABELS[copy.source] ?? copy.source),
+          copy.phone ? `📞 ${escapeHtml(copy.phone)}` : null,
+        ]),
+      ),
+    ].filter(Boolean);
+    return { listing, ...(header.length > 0 ? { header: header.join('\n') } : {}) };
   });
   cardSessions.set(`review:${chat}`, cards);
   await sendCardList(ctx, deps, 'review', cards, 0);
@@ -421,15 +430,19 @@ export async function handleTracked(ctx: Context, deps: CommandDeps, argument: s
       ...contactLines(first!),
       ...copies.flatMap((copy) => {
         const lines = contactLines(copy);
-        const price = copy.listing.price === null ? '' : ` ${copy.listing.price.toLocaleString('en-US')} ₪`;
-        const link = `<a href="${escapeHtml(copy.listing.url)}">עותק${price}</a>`;
-        return lines.length > 0 ? [`${link}: ${lines.join(' ')}`] : [];
+        return lines.length > 0 ? [copyLine(copy.listing, lines)] : [];
       }),
     ].join('\n');
     return { listing, header };
   });
   cardSessions.set(`tracked:${chatOf(ctx)}`, cards);
   await sendCardList(ctx, deps, 'tracked', cards, 0);
+}
+
+/** A card header line for another ad of the flat: a link with its price, then `details`. */
+function copyLine(copy: Listing, details: Array<string | null>): string {
+  const price = copy.price === null ? '' : ` ${copy.price.toLocaleString('en-US')} ₪`;
+  return [`<a href="${escapeHtml(copy.url)}">עותק${price}</a>:`, ...details].filter(Boolean).join(' ');
 }
 
 export async function handleNow(ctx: Context, deps: CommandDeps): Promise<void> {
