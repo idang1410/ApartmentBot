@@ -39,7 +39,7 @@ export const SEEN_PREFIX = 'yad2_seen:';
 export const SEEN_LIMIT = 1_000;
 
 /** Pages one deep-search step reads; the gateway's throttle spaces them. */
-export const DEEP_PAGES_PER_STEP = 5;
+export const DEEP_PAGES_PER_STEP = 20;
 
 /** The deep search's last page. Tel Aviv's whole feed is ~175. */
 export const DEEP_MAX_PAGES = 200;

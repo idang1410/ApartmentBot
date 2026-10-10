@@ -269,7 +269,7 @@ describe('the yad2 deep search', () => {
   it('reads DEEP_PAGES_PER_STEP pages from where it was, and says the total', async () => {
     const { calls, fetchPage } = recording((n) => page(tokensFor('x', n), 173));
     const step = await createYad2Adapter(fetchPage).deepSearch!(telAviv, 10);
-    expect(calls).toEqual([11, 12, 13, 14, 15].slice(0, DEEP_PAGES_PER_STEP));
+    expect(calls).toEqual(Array.from({ length: DEEP_PAGES_PER_STEP }, (_, i) => 11 + i));
     expect(step.next).toBe(10 + DEEP_PAGES_PER_STEP);
     expect(step.total).toBe(173);
     expect(step.listings.map((l) => l.sourceId)).toContain('x11a');
