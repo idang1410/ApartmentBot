@@ -4,7 +4,7 @@ import { findCityByKey } from '../src/core/cities.js';
 import { SessionExpiredError } from '../src/core/types.js';
 import type { SavedSearch } from '../src/core/types.js';
 import { createFacebookAdapter, isOffline, toListing } from '../src/sources/facebook/fbAdapter.js';
-import { postLink, postText } from '../src/sources/facebook/fbBrowser.js';
+import { choosePostedLabel, postLink, postText } from '../src/sources/facebook/fbBrowser.js';
 import { parsedPostSchema } from '../src/llm/extractPosts.js';
 import { FACEBOOK_GROUPS, ROTATING_GROUPS, groupsForCity, groupsToRead } from '../src/sources/facebook/fbGroups.js';
 import {
@@ -158,5 +158,19 @@ describe('session expiry', () => {
     expect(error.source).toBe('facebook');
     expect(error.message).toContain('npm run fb-login');
     expect(error).toBeInstanceOf(Error);
+  });
+});
+
+describe('choosePostedLabel', () => {
+  it('prefers the timestamp tooltip when it reads as a date', () => {
+    expect(choosePostedLabel('יום שני, 15 בספטמבר 2025\nבשעה 10:00', 'דירה 3 באוגוסט')).toBe(
+      'יום שני, 15 בספטמבר 2025 בשעה 10:00',
+    );
+  });
+
+  it('falls back to the stamp in the text when the tooltip is missing or not a date', () => {
+    expect(choosePostedLabel(undefined, 'פורסם 3 באוגוסט דירה')).toBe('3 באוגוסט');
+    expect(choosePostedLabel('Like', 'פורסם 3 באוגוסט דירה')).toBe('3 באוגוסט');
+    expect(choosePostedLabel(undefined, 'דירה יפה')).toBeUndefined();
   });
 });

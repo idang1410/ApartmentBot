@@ -354,6 +354,22 @@ describe('facebook date stamps', () => {
   it('assumes a month that has not come yet this year was last year', () => {
     expect(parsePostedDate('3 בדצמבר', now)?.getFullYear()).toBe(2025);
   });
+
+  it('reads the year the timestamp tooltip states', () => {
+    expect(parsePostedDate('יום שני, 15 בספטמבר 2024 בשעה 10:00', now)?.toDateString()).toBe(
+      new Date(2024, 8, 15).toDateString(),
+    );
+    expect(parsePostedDate('Monday, September 15, 2024 at 10:00 AM', now)?.toDateString()).toBe(
+      new Date(2024, 8, 15).toDateString(),
+    );
+    expect(parsePostedDate('15 September 2024 at 10:00', now)?.toDateString()).toBe(
+      new Date(2024, 8, 15).toDateString(),
+    );
+  });
+
+  it('assumes the latest year for an English stamp with none', () => {
+    expect(parsePostedDate('December 3 at 10:00', now)?.getFullYear()).toBe(2025);
+  });
 });
 
 describe('area summary', () => {

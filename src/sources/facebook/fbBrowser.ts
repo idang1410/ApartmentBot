@@ -1,6 +1,7 @@
 import { chromium, type BrowserContext, type Locator, type Page } from 'playwright';
 import { logger } from '../../logger.js';
 import { randomBetween, sleep } from '../../util/http.js';
+import { parsePostedDate } from '../../util/time.js';
 
 /** Session cookies live here so the owner only logs in once. */
 export const USER_DATA_DIR = './.fb-profile';
@@ -146,9 +147,26 @@ const UNREAD_POST = 'div[role="feed"] > div:not([data-apt-read]):has([data-ad-re
  */
 async function readPostUnit(unit: Locator, groupSlug: string): Promise<RawPost | null> {
   await expandSeeMore(unit);
+  // The previous post's tooltip must close first, or its date is read for this post.
+  await unit.page().mouse.move(0, 0);
+  await unit
+    .page()
+    .waitForFunction(
+      () => !Array.from(document.querySelectorAll<HTMLElement>('[role="tooltip"]')).some((el) => el.checkVisibility()),
+      undefined,
+      { timeout: 2_000 },
+    )
+    .catch(() => undefined);
   // The timestamp is the header's first link that is not a profile.
   await unit.locator('a[href^="?"], a[href="#"]').first().hover({ timeout: 3_000 }).catch(() => undefined);
   await sleep(randomBetween(300, 800));
+  // Hovering the timestamp shows its full date, year included, in a tooltip.
+  const tooltip = await unit
+    .page()
+    .locator('[role="tooltip"]:visible')
+    .last()
+    .innerText({ timeout: 1_000 })
+    .catch(() => undefined);
 
   const { text, hrefs, images } = await unit.evaluate((el) => ({
     text: (el as HTMLElement).innerText,
@@ -164,7 +182,7 @@ async function readPostUnit(unit: Locator, groupSlug: string): Promise<RawPost |
   const link = postLink(hrefs, groupSlug);
   if (!link) return null;
 
-  const postedLabel = /(\d+\s+ב[א-ת]+|לפני\s+\S+|שעה|אתמול)/.exec(flat)?.[0];
+  const postedLabel = choosePostedLabel(tooltip, flat);
   const imageUrls = adImages(images);
   return {
     ...link,
@@ -173,6 +191,16 @@ async function readPostUnit(unit: Locator, groupSlug: string): Promise<RawPost |
     ...(postedLabel ? { postedLabel } : {}),
     ...(imageUrls.length > 0 ? { imageUrls } : {}),
   };
+}
+
+/**
+ * The timestamp tooltip when it reads as a date, else the stamp found in the
+ * post's text. Facebook scrambles the stamp's text, so it is often missing.
+ */
+export function choosePostedLabel(tooltip: string | undefined, text: string): string | undefined {
+  const label = tooltip?.replace(/\s+/g, ' ').trim();
+  if (label && parsePostedDate(label)) return label;
+  return /(\d+\s+ב[א-ת]+|לפני\s+\S+|שעה|אתמול)/.exec(text)?.[0];
 }
 
 /** Rendered images of an ad by document position; `top` is 0 where position does not matter. */
