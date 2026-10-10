@@ -112,8 +112,8 @@ describe('listing freshness', () => {
     expect(isFreshEnough(listing(), now)).toBe(true);
   });
 
-  it('keeps old Yad2 ads, since its feed holds only recently updated ones', () => {
-    expect(isFreshEnough(listing({ source: 'yad2', postedAt: daysAgo(MAX_LISTING_AGE_DAYS + 60) }), now)).toBe(true);
+  it('drops old Yad2 ads like any other', () => {
+    expect(isFreshEnough(listing({ source: 'yad2', postedAt: daysAgo(MAX_LISTING_AGE_DAYS + 60) }), now)).toBe(false);
   });
 
   it('draws the line at the configured age', () => {
