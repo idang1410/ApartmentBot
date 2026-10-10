@@ -221,12 +221,26 @@ const SQM_TOLERANCE = 5;
  * different floors make it 'maybe'. Two ads with one phone number are also
  * 'same' when samePoster says so. In one city, two shared photos make it
  * 'same' whatever the address says, and one shared photo makes it at least 'maybe'.
+ * An ad with no street is 'same' as another when sameDetails says so.
  */
 export function sameFlat(a: Listing, b: Listing): 'same' | 'maybe' | null {
   if (samePoster(a, b)) return 'same';
   const photos = normalizeCityName(a.city) === normalizeCityName(b.city) ? sharedPhotos(a, b) : 0;
   if (photos >= 2) return 'same';
-  return sameAddress(a, b) ?? (photos === 1 ? 'maybe' : null);
+  return sameAddress(a, b) ?? (sameDetails(a, b) ? 'same' : photos === 1 ? 'maybe' : null);
+}
+
+/**
+ * An ad with no street against another ad in one city: rooms, price, size
+ * (within 2 m²) and floor are all known on both and all agree.
+ */
+function sameDetails(a: Listing, b: Listing): boolean {
+  if (a.address && b.address) return false;
+  if (normalizeCityName(a.city) !== normalizeCityName(b.city)) return false;
+  if (a.rooms === null || a.rooms !== b.rooms || a.price === null || a.price !== b.price) return false;
+  if (a.sqm === undefined || b.sqm === undefined || Math.abs(a.sqm - b.sqm) > 2) return false;
+  const floor = a.floor ? floorKey(a.floor) : null;
+  return floor !== null && floor === (b.floor ? floorKey(b.floor) : null);
 }
 
 /** Photo hashes this many bits apart or fewer are one photo, edited. */

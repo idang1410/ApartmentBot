@@ -37,6 +37,13 @@ const onmap = ad({
 });
 
 describe('same flat', () => {
+  it('matches an ad with no street by rooms, price, size and floor', () => {
+    const post = ad({ source: 'facebook', sourceId: 'p', address: undefined, price: 8_400, sqm: 81, floor: 'קומה 3' });
+    expect(sameFlat(post, agent)).toBe('same');
+    expect(sameFlat({ ...post, floor: 'קומה 2' }, agent)).toBeNull();
+    expect(sameFlat({ ...post, price: 8_500 }, agent)).toBeNull();
+  });
+
   it('matches one flat listed by an agent and by the owner at different prices', () => {
     expect(sameFlat(agent, owner)).toBe('same');
   });
@@ -50,7 +57,7 @@ describe('same flat', () => {
     expect(sameFlat(agent, ad({ address: 'השוק 12' }))).toBeNull();
     expect(sameFlat(agent, ad({ sqm: 90 }))).toBeNull();
     expect(sameFlat(agent, ad({ rooms: 4 }))).toBeNull();
-    expect(sameFlat(ad({ address: undefined }), ad({ address: undefined }))).toBeNull();
+    expect(sameFlat(ad({ address: undefined, sqm: undefined }), ad({ address: undefined, sqm: undefined }))).toBeNull();
   });
 
   it('needs both sizes to match a numberless street to a numbered one', () => {

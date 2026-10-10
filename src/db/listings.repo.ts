@@ -490,7 +490,7 @@ export class ListingsRepo {
    */
   copiesOf(listing: Listing, chatId: number, days = 60): ListingCopy[] {
     const photos = listing.photoHashes ? 1 : 0;
-    if (!photos && (!listing.address || listing.rooms === null)) return [];
+    if (!photos && listing.rooms === null) return [];
     const candidate = `(json_extract(payload, '$.rooms') = ? OR (? AND json_extract(payload, '$.photoHashes') IS NOT NULL))`;
     const rows = this.db
       .prepare(
