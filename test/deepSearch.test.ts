@@ -211,9 +211,20 @@ describe('deep paging per source', () => {
     resetMadlanCache();
   });
 
-  const realtaPayload = JSON.parse(
+  const realtaFixture = JSON.parse(
     readFileSync(join(import.meta.dirname, 'fixtures', 'realta-modiin.json'), 'utf8'),
   );
+  // Dated today, so no page ends on an ad too old to alert.
+  const realtaPayload = {
+    ...realtaFixture,
+    properties: realtaFixture.properties.map((p: object) => ({ ...p, publishedAt: new Date().toISOString() })),
+  };
+
+  it('realta ends at a page whose last ad is older than 30 days', async () => {
+    vi.mocked(fetchText).mockResolvedValue(JSON.stringify(realtaFixture));
+    expect((await realtaAdapter.deepSearch!(modiin, 0)).next).toBeNull();
+    expect(fetchText).toHaveBeenCalledTimes(1);
+  });
 
   it('realta pages by offset from where it was, and ends at a short page', async () => {
     vi.mocked(fetchText).mockImplementation(async (url) => {

@@ -1,4 +1,5 @@
 import { listingCityMatches } from '../../core/cities.js';
+import { MAX_LISTING_AGE_DAYS } from '../../core/filter.js';
 import type { CityEntry, DeepStep, Listing, SavedSearch, SourceAdapter } from '../../core/types.js';
 import { logger } from '../../logger.js';
 import { fetchText } from '../../util/http.js';
@@ -66,7 +67,12 @@ export const realtaAdapter: SourceAdapter = {
       if (!listings) throw new Error('realta returned a non-JSON body');
       page++;
       collected.push(...listings.filter((l) => listingCityMatches(city, l.city)));
-      ended = listings.length < PAGE_SIZE || page >= DEEP_MAX_PAGES;
+      // Pages are newest first, so a page that ends on an ad too old to alert ends the search.
+      const last = listings.at(-1)?.postedAt;
+      ended =
+        listings.length < PAGE_SIZE ||
+        (last !== undefined && Date.now() - last.getTime() > MAX_LISTING_AGE_DAYS * 86_400_000) ||
+        page >= DEEP_MAX_PAGES;
     }
     return { listings: collected, next: ended ? null : page };
   },
