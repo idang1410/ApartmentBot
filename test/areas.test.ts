@@ -136,6 +136,7 @@ describe('area filtering', () => {
     expect(withinAreas(jaffa('תל אביב-יפו'), s)).toBe(false);
     expect(withinAreas(jaffa('צפון יפו, המושבה האמריקאית-גרמנית'), s)).toBe(true);
     expect(withinAreas(jaffa('שוק הפשפשים'), s)).toBe(true);
+    expect(withinAreas(jaffa('גבעת הרצל, אזור המלאכה יפו'), s)).toBe(true);
     expect(withinAreas(jaffa('מכללת תל אביב יפו, דקר'), search({ cityKeys: ['tel-aviv'], areas: { 'tel-aviv': ['מרכז יפו'] } }))).toBe(true);
   });
 
