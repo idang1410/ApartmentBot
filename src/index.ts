@@ -4,6 +4,7 @@ import { HealthTracker } from './core/health.js';
 import { Geocoder } from './core/geocode.js';
 import { Notifier } from './core/notifier.js';
 import { PollCycle } from './core/pollCycle.js';
+import { checkRemovedYad2 } from './core/removedCheck.js';
 import { Scheduler } from './core/scheduler.js';
 import { openDatabase } from './db/database.js';
 import { KvRepo } from './db/kv.repo.js';
@@ -34,7 +35,10 @@ const adapters = buildAdapters(
 const bot = createBot();
 const notifier = new Notifier(bot.api, listings, searches, kv);
 const cycle = new PollCycle(adapters, searches, listings, kv, notifier, health);
-const scheduler = new Scheduler(cycle);
+const scheduler = new Scheduler(
+  cycle,
+  adapters.some((a) => a.name === 'yad2') ? () => checkRemovedYad2({ searches, listings, kv, notifier }) : undefined,
+);
 
 function main(): void {
   logger.info(

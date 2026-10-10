@@ -14,7 +14,11 @@ export class Scheduler {
   private stopped = false;
   private nextRunAt: Date | null = null;
 
-  constructor(private readonly cycle: PollCycle) {}
+  /** `afterCycle` runs in the background after each cycle that finished; its errors are logged. */
+  constructor(
+    private readonly cycle: PollCycle,
+    private readonly afterCycle?: () => Promise<void>,
+  ) {}
 
   start(): void {
     this.stopped = false;
@@ -59,6 +63,7 @@ export class Scheduler {
       const started = Date.now();
       const result = await this.cycle.run(options);
       logger.info({ ...result, ms: Date.now() - started }, 'poll cycle finished');
+      this.afterCycle?.().catch((error: unknown) => logger.error({ err: error }, 'after-cycle work failed'));
       return result;
     } catch (error) {
       // The cycle isolates source failures itself; reaching here means a bug,
