@@ -361,8 +361,9 @@ export async function handleStatusCallback(ctx: Context, deps: CommandDeps, data
     return;
   }
   // A status belongs to the flat, so it goes on every tracked copy of it.
+  deps.listings.setStatus(parsed.id, chatOf(ctx), parsed.status);
   for (const copy of deps.listings.listTracked(chatOf(ctx), true)) {
-    if (copy.id === parsed.id || sameFlat(copy.listing, tracked.listing) === 'same') {
+    if (sameFlat(copy.listing, tracked.listing) === 'same') {
       deps.listings.setStatus(copy.id, chatOf(ctx), parsed.status);
     }
   }

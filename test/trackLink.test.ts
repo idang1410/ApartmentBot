@@ -243,6 +243,24 @@ describe('link messages to the bot', () => {
     expect(sendPreview).toHaveBeenCalledTimes(2);
   });
 
+  it('saves the first status tapped on a card', async () => {
+    const id = listings.track(
+      { source: 'yad2', sourceId: 'a', url: 'https://x/a', price: 1, rooms: 1, city: 'c', amenities: [], imageUrls: [] },
+      CHAT,
+    );
+    await bot.handleUpdate({
+      update_id: 2,
+      callback_query: {
+        id: 'q',
+        chat_instance: 'c',
+        from: { id: CHAT, is_bot: false, first_name: 'o' },
+        message: { message_id: 5, date: 0, chat: { id: CHAT, type: 'private', first_name: 'o' } },
+        data: statusCallback(id, 'rejected'),
+      },
+    } as Update);
+    expect(listings.tracked(id, CHAT)?.status).toBe('rejected');
+  });
+
   it('saves a link sent as a reply to an alert as a note', async () => {
     const id = listings.track(
       { source: 'yad2', sourceId: 'a', url: 'https://x/a', price: 1, rooms: 1, city: 'c', amenities: [], imageUrls: [] },
