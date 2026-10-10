@@ -283,6 +283,7 @@ export const REGION_ALIASES: Record<string, Record<string, string[]>> = {
   },
   'tel-aviv': {
     'צפון יפו': ['צפון יפו', 'המושבה האמריקאית', 'שוק הפשפשים'],
+    'מרכז יפו': ['מרכז יפו', 'דקר'],
   },
 };
 
