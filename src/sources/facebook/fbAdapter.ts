@@ -23,7 +23,7 @@ import { FACEBOOK_GROUPS, groupsForCity, groupsToRead } from './fbGroups.js';
 const SOURCE = 'facebook';
 const POSTS_PER_GROUP = 30;
 /** A deep-search group visit reads back this far, up to DEEP_POSTS_PER_GROUP posts. */
-const DEEP_MAX_AGE_DAYS = 14;
+const DEEP_MAX_AGE_DAYS = Number(process.env.FB_DEEP_DAYS ?? 14);
 const DEEP_POSTS_PER_GROUP = 150;
 /** Enough scrolls for DEEP_POSTS_PER_GROUP posts. */
 const DEEP_MAX_SCROLLS = 100;
