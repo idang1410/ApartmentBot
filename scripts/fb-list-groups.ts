@@ -3,7 +3,7 @@ import { openContext } from '../src/sources/facebook/fbBrowser.js';
 
 const context = await openContext(true);
 const page = await context.newPage();
-await page.goto('https://www.facebook.com/groups/joins/?nav_source=tab', { waitUntil: 'domcontentloaded' });
+await page.goto('https://www.facebook.com/groups/joins/?nav_source=tab', { waitUntil: 'domcontentloaded', timeout: 90_000 });
 await page.waitForTimeout(4000);
 // Scroll until three rounds in a row load no new group links.
 for (let count = 0, idle = 0; idle < 3; ) {
