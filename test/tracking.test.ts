@@ -155,6 +155,15 @@ describe('rejected flats in the poll cycle', () => {
     expect(listings.pending()).toHaveLength(0);
   });
 
+  it('never alerts on a photo copy of a rejected flat', async () => {
+    const photoHashes = ['0f0f0f0f0f0f0f0f', 'f0f0f0f0f0f0f0f0'];
+    const flat = ad({ sourceId: 'p', address: undefined, photoHashes });
+    listings.setStatus(listings.track(flat, CHAT), CHAT, 'rejected');
+    current = [ad({ source: 'realta', sourceId: 'r3', url: 'https://r/3', address: 'אלנבי 9', photoHashes })];
+    await cycle.run();
+    expect(listings.pending()).toHaveLength(0);
+  });
+
   it('reports no price drop on a taken flat', async () => {
     listings.setStatus(listings.track(ad(), CHAT), CHAT, 'taken');
     current = [ad({ price: 5_000 })];

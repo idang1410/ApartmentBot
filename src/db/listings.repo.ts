@@ -471,7 +471,8 @@ export class ListingsRepo {
   /**
    * True when this chat marked the flat rejected or taken, under the key it was
    * recorded with or under its fingerprint as listed now - the second is how
-   * a sighting on another board is caught.
+   * a sighting on another board is caught. A same-flat copy (photos, phone)
+   * that is closed also counts.
    */
   isClosed(listing: Listing, chatId: number): boolean {
     const keys = [this.trackingKey(listing, chatId), listingFingerprint(listing)];
@@ -479,7 +480,12 @@ export class ListingsRepo {
       `SELECT 1 FROM tracked_listings WHERE chat_id = ? AND fingerprint = ?
           AND status IN (${CLOSED_STATUSES.map(() => '?').join(', ')})`,
     );
-    return keys.some((key) => key !== null && closed.get(chatId, key, ...CLOSED_STATUSES) !== undefined);
+    return (
+      keys.some((key) => key !== null && closed.get(chatId, key, ...CLOSED_STATUSES) !== undefined) ||
+      this.copiesOf(listing, chatId).some(
+        (copy) => copy.kind === 'same' && copy.status !== null && CLOSED_STATUSES.includes(copy.status),
+      )
+    );
   }
 
   /**
