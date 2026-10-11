@@ -45,6 +45,7 @@ describe('facebook configuration', () => {
 
   it('tells a lost network from a single failing page', () => {
     expect(isOffline(new Error('page.goto: net::ERR_INTERNET_DISCONNECTED at https://www.facebook.com/groups/1/'))).toBe(true);
+    expect(isOffline(new Error('page.goto: net::ERR_TIMED_OUT at https://www.facebook.com/marketplace/item/1/'))).toBe(true);
     expect(isOffline(new Error('page.goto: Timeout 30000ms exceeded.'))).toBe(false);
   });
 

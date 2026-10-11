@@ -136,7 +136,7 @@ export function createFacebookAdapter(stored: StoredListings): SourceAdapter {
 export function isOffline(error: unknown): boolean {
   return (
     error instanceof Error &&
-    /net::ERR_(INTERNET_DISCONNECTED|NETWORK_CHANGED|NAME_NOT_RESOLVED|ADDRESS_UNREACHABLE)/.test(error.message)
+    /net::ERR_(INTERNET_DISCONNECTED|NETWORK_CHANGED|NAME_NOT_RESOLVED|ADDRESS_UNREACHABLE|TIMED_OUT|CONNECTION_TIMED_OUT)/.test(error.message)
   );
 }
 
